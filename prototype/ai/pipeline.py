@@ -233,11 +233,15 @@ class AIPipeline:
                 valid_kps = sum(1 for kp in pose.keypoints if len(kp) > 2 and kp[2] > 0.20)
                 if valid_kps >= 4:
                     for track in tracks:
-                        if track.category != "person" and bbox_iou(pose.bbox, track.bbox) > 0.20:
+                        t_h = track.bbox[3] - track.bbox[1]
+                        t_w = max(1.0, track.bbox[2] - track.bbox[0])
+                        if track.category != "person" and (t_h / t_w > 1.0) and bbox_iou(pose.bbox, track.bbox) > 0.35:
                             track.class_name = "person"
                             track.category = "person"
                     for det in detections:
-                        if det.category != "person" and bbox_iou(pose.bbox, det.bbox) > 0.20:
+                        d_h = det.bbox[3] - det.bbox[1]
+                        d_w = max(1.0, det.bbox[2] - det.bbox[0])
+                        if det.category != "person" and (d_h / d_w > 1.0) and bbox_iou(pose.bbox, det.bbox) > 0.35:
                             det.class_name = "person"
                             det.category = "person"
 
@@ -306,11 +310,15 @@ class AIPipeline:
                 valid_kps = sum(1 for kp in pose.keypoints if len(kp) > 2 and kp[2] > 0.20)
                 if valid_kps >= 4:
                     for track in tracks:
-                        if track.category != "person" and bbox_iou(pose.bbox, track.bbox) > 0.20:
+                        t_h = track.bbox[3] - track.bbox[1]
+                        t_w = max(1.0, track.bbox[2] - track.bbox[0])
+                        if track.category != "person" and (t_h / t_w > 1.0) and bbox_iou(pose.bbox, track.bbox) > 0.35:
                             track.class_name = "person"
                             track.category = "person"
                     for det in detections:
-                        if det.category != "person" and bbox_iou(pose.bbox, det.bbox) > 0.20:
+                        d_h = det.bbox[3] - det.bbox[1]
+                        d_w = max(1.0, det.bbox[2] - det.bbox[0])
+                        if det.category != "person" and (d_h / d_w > 1.0) and bbox_iou(pose.bbox, det.bbox) > 0.35:
                             det.class_name = "person"
                             det.category = "person"
         elif not num_persons:

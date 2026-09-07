@@ -183,6 +183,8 @@ class ObjectTracker:
                 if ultra_id in self.tracks:
                     # Update existing track
                     track = self.tracks[ultra_id]
+                    track.class_name = class_name
+                    track.category = category
                     track.confidence = confidence
                     track.bbox = [x1, y1, x2, y2]
 

@@ -209,7 +209,7 @@ class PoseEstimator:
                         t_h = tb[3] - tb[1]
                         t_w = max(1.0, tb[2] - tb[0])
                         # If overlapping and tall/vertical human profile
-                        if iou > 0.20 or (t_h / t_w > 1.1 and bbox_iou(pose.bbox, track.bbox) > 0.15):
+                        if iou > 0.35 and (t_h / t_w > 1.0):
                             logger.info("[POSE] Correcting track %s (%s) -> person based on verified human pose (kps: %d)",
                                         getattr(track, "vg_id", track.track_id), track.class_name, valid_kps)
                             track.class_name = "person"
