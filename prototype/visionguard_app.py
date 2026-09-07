@@ -184,12 +184,26 @@ class VisionGuardStudio(tk.Tk):
                                   state=tk.DISABLED, command=self.stop_detection)
         self.btn_stop.pack(side=tk.RIGHT, expand=True, fill=tk.X, padx=(3, 0))
 
-        # Loop checkbox
+        # Display Overlay Checkboxes
         self.loop_var = tk.BooleanVar(value=True)
         chk_loop = tk.Checkbutton(sidebar, text="🔁 Loop playback continuously", variable=self.loop_var,
                                   bg=self.bg_panel, fg=self.text_main, selectcolor="#0d0f14",
                                   activebackground=self.bg_panel, font=("Segoe UI", 9))
-        chk_loop.pack(anchor="w", padx=12, pady=(0, 10))
+        chk_loop.pack(anchor="w", padx=12, pady=(0, 3))
+
+        self.skel_var = tk.BooleanVar(value=True)
+        chk_skel = tk.Checkbutton(sidebar, text="🦴 Pose Skeletons (Yellow Body Patterns)", variable=self.skel_var,
+                                  bg=self.bg_panel, fg="#ffff00", selectcolor="#0d0f14",
+                                  activebackground=self.bg_panel, font=("Segoe UI", 9, "bold"),
+                                  command=self._on_toggle_overlays)
+        chk_skel.pack(anchor="w", padx=12, pady=(0, 3))
+
+        self.boxes_var = tk.BooleanVar(value=True)
+        chk_boxes = tk.Checkbutton(sidebar, text="📦 Object Bounding Boxes", variable=self.boxes_var,
+                                   bg=self.bg_panel, fg=self.text_main, selectcolor="#0d0f14",
+                                   activebackground=self.bg_panel, font=("Segoe UI", 9),
+                                   command=self._on_toggle_overlays)
+        chk_boxes.pack(anchor="w", padx=12, pady=(0, 8))
 
         # Alert Feed Box
         lbl_alerts_title = tk.Label(sidebar, text="LIVE EVENT ALERTS", bg=self.bg_panel,
@@ -264,11 +278,14 @@ class VisionGuardStudio(tk.Tk):
         full_path = self.video_dict.get(name)
         if full_path:
             self.current_video_path = full_path
-            self.lbl_selected.config(text=f"Selected: {name}")
-
-            # If already running, switch video automatically
             if self.is_running:
                 self.start_detection()
+
+    def _on_toggle_overlays(self):
+        """Update display renderer overlay flags from GUI checkboxes."""
+        self.display_renderer.show_skeletons = self.skel_var.get()
+        self.display_renderer.show_detections = self.boxes_var.get()
+        self.display_renderer.show_tracks = self.boxes_var.get()
 
     def _browse_custom_video(self):
         file_path = filedialog.askopenfilename(
@@ -321,8 +338,9 @@ class VisionGuardStudio(tk.Tk):
         self.btn_pause.config(state=tk.NORMAL, text="⏸ Pause")
         self.btn_stop.config(state=tk.NORMAL)
 
-        # Clear alerts
+        # Clear alerts & sync overlay state
         self.alert_text.delete(1.0, tk.END)
+        self._on_toggle_overlays()
 
         # Start worker thread for video decoding and processing
         self.worker_thread = threading.Thread(target=self._video_processing_worker,

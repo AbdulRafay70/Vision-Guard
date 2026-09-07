@@ -79,8 +79,9 @@ fire/
 # Runtime Evidence, Captures & Output
 prototype/evidence/
 !prototype/evidence/.gitkeep
-prototype/output/
-!prototype/output/.gitkeep
+prototype/output/*.mp4
+prototype/output/*.avi
+prototype/output/stress/
 prototype/test_videos/
 !prototype/test_videos/.gitkeep
 prototype/scratch/
