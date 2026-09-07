@@ -72,6 +72,10 @@ fire/
 *.wav
 *.mp3
 
+# Whitelist sample demo videos
+!prototype/Videos/
+!prototype/Videos/**
+
 # Runtime Evidence, Captures & Output
 prototype/evidence/
 !prototype/evidence/.gitkeep
