@@ -1,0 +1,38 @@
+[
+  {
+    "username": "admin",
+    "full_name": "Executive Command Operator",
+    "email": "admin@visionguard.gov.pk",
+    "role": "Super Admin",
+    "department": "Central Command & Control",
+    "access_level": "Full Control",
+    "status": "Active",
+    "sector": "All Sectors (Karachi Grid)",
+    "created_at": "2026-01-15T08:00:00Z",
+    "last_login": "2026-09-07T22:00:00Z"
+  },
+  {
+    "username": "operator_saddar",
+    "full_name": "Tariq Mahmood",
+    "email": "tariq.m@visionguard.gov.pk",
+    "role": "Tactical Operator",
+    "department": "Sector 1 - Saddar Command",
+    "access_level": "Live Monitor & Patrol Control",
+    "status": "Active",
+    "sector": "Sector 1 - Saddar",
+    "created_at": "2026-02-10T10:30:00Z",
+    "last_login": "2026-09-07T21:15:00Z"
+  },
+  {
+    "username": "analyst_clifton",
+    "full_name": "Dr. Sarah Khan",
+    "email": "sarah.k@visionguard.gov.pk",
+    "role": "Security Analyst",
+    "department": "Forensic Intelligence Unit",
+    "access_level": "Evidence Export & Analytics",
+    "status": "Active",
+    "sector": "Sector 2 - Clifton & DHA",
+    "created_at": "2026-03-01T14:20:00Z",
+    "last_login": "2026-09-06T18:45:00Z"
+  }
+]

@@ -1,10 +1,10 @@
 @echo off
-title VisionGuard AI — Web Command Center
+title VisionGuard AI — Backend API Server
 echo ============================================================
-echo   🛡️  LAUNCHING VISIONGUARD WEB COMMAND CENTER (REACT + FASTAPI)
+echo   🛡️  LAUNCHING VISIONGUARD BACKEND API SERVER (FASTAPI)
 echo ============================================================
 echo.
-echo Starting FastAPI Server at http://localhost:8000 ...
+echo Starting FastAPI API Server at http://localhost:8000 ...
 echo Press Ctrl+C to stop.
 echo.
 cd /d "%~dp0"

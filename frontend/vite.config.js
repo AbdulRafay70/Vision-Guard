@@ -23,11 +23,22 @@ export default defineConfig({
         target: 'ws://127.0.0.1:8000',
         ws: true,
         rewriteWsOrigin: true,
+        configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, _res) => {
+            if (['ECONNABORTED', 'ECONNRESET', 'EPIPE', 'ETIMEDOUT'].includes(err?.code)) return;
+            console.warn('[vite ws proxy]', err?.message || err);
+          });
+          proxy.on('proxyReqWsError', (err, _req, _socket) => {
+            if (['ECONNABORTED', 'ECONNRESET', 'EPIPE', 'ETIMEDOUT'].includes(err?.code)) return;
+            console.warn('[vite ws proxy socket]', err?.message || err);
+          });
+        },
       },
+
     },
   },
   build: {
-    outDir: '../prototype/web/dist',
+    outDir: 'dist',
     emptyOutDir: true,
   },
 })

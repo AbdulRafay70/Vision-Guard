@@ -333,73 +333,43 @@ _default_video = (
 )
 
 CAMERAS = {
-    "cam_v380_street": {
-        "id": "cam_v380_street",
-        "name": "V380 Street Cam (ID: 76236061)",
-        "type": "webcam",
-        "source": 1,
-        "enabled": True
-    },
-    "cam_v380_cam2": {
-        "id": "cam_v380_cam2",
-        "name": "V380 Camera 2 (ID: 73283636)",
-        "type": "webcam",
-        "source": 2,
-        "enabled": True
-    },
     "cam_01": {
         "id": "cam_01",
-        "name": "Command Center Webcam",
+        "name": "Command Center Main Camera",
         "type": "webcam",
         "source": 0,
         "enabled": True
     },
-
-    "cam_02": {
-        "id": "cam_02",
-        "name": "Sector 3: Perimeter Gate (Hikvision RTSP)",
-        "type": "rtsp",
-        "source": f"rtsp://{_RTSP_USER}:{_RTSP_PASS}@192.168.1.64:554/Streaming/Channels/101"
-                  if _RTSP_USER else "rtsp://192.168.1.64:554/Streaming/Channels/101",
-        "enabled": False
-    },
-    "cam_03": {
-        "id": "cam_03",
-        "name": "Sector 4: Vehicle Parking (Dahua RTSP)",
-        "type": "rtsp",
-        "source": f"rtsp://{_RTSP_USER}:{_RTSP_PASS}@192.168.1.65:554/cam/realmonitor?channel=1&subtype=0"
-                  if _RTSP_USER else "rtsp://192.168.1.65:554/cam/realmonitor?channel=1&subtype=0",
-        "enabled": False
-    },
-    "cam_04": {
-        "id": "cam_04",
-        "name": "Sector 5: Pedestrian Crosswalk (Test Video)",
+    "cam_fire": {
+        "id": "cam_fire",
+        "name": "Incident Video: Fire & Explosion",
         "type": "video",
-        "source": str(TEST_VIDEOS_DIR / "15274666_1080_1920_24fps.mp4"),
-        "enabled": False
+        "source": str(BASE_DIR / "Videos" / "fire.mp4"),
+        "enabled": True
     },
-    "cam_05": {
-        "id": "cam_05",
-        "name": "Sector 6: Highway Corridor (HD 1080p)",
+    "cam_fight": {
+        "id": "cam_fight",
+        "name": "Incident Video: Street Brawl",
         "type": "video",
-        "source": str(TEST_VIDEOS_DIR / "4116863-hd_1920_1080_30fps.mp4"),
-        "enabled": False
+        "source": str(BASE_DIR / "Videos" / "fighting.mp4"),
+        "enabled": True
     },
-    "cam_06": {
-        "id": "cam_06",
-        "name": "Sector 7: Alleyway Violence Check",
+    "cam_gun": {
+        "id": "cam_gun",
+        "name": "Incident Video: Armed Robbery",
         "type": "video",
-        "source": str(TEST_VIDEOS_DIR / "violence_group_of_thugs_beating_someone.mp4"),
-        "enabled": False
+        "source": str(BASE_DIR / "Videos" / "gun.mp4"),
+        "enabled": True
     },
-    "cam_07": {
-        "id": "cam_07",
-        "name": "Sector 8: North Boundary (PTZ Dome RTSP)",
-        "type": "rtsp",
-        "source": "rtsp://192.168.1.66:554/Streaming/Channels/101",
-        "enabled": False
+    "cam_crowd": {
+        "id": "cam_crowd",
+        "name": "Incident Video: Crowd Gathering",
+        "type": "video",
+        "source": str(BASE_DIR / "Videos" / "crowded.mp4"),
+        "enabled": True
     }
 }
+
 
 # ═══════════════════════════════════════════════════════
 # AI PIPELINE SETTINGS

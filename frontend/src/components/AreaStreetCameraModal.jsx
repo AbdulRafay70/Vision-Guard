@@ -441,33 +441,12 @@ export default function AreaStreetCameraModal({
                     onChange={e => setNewCamSource(e.target.value)}
                     className="infra-input font-mono"
                   />
-                  <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Quick Video:</span>
-                    <button 
-                      type="button" 
-                      onClick={() => { setNewCamSource('/4116863-hd_1920_1080_30fps.mp4'); setNewCamType('video'); }} 
-                      className="link-btn"
-                      style={{ fontSize: '10px' }}
-                    >
-                      Traffic (HD)
-                    </button>
-                    <button 
-                      type="button" 
-                      onClick={() => { setNewCamSource('/violence_group_of_thugs_beating_someone.mp4'); setNewCamType('video'); }} 
-                      className="link-btn"
-                      style={{ fontSize: '10px' }}
-                    >
-                      Security Threat
-                    </button>
-                    <button 
-                      type="button" 
-                      onClick={() => { setNewCamSource('/15274666_1080_1920_24fps.mp4'); setNewCamType('video'); }} 
-                      className="link-btn"
-                      style={{ fontSize: '10px' }}
-                    >
-                      Perimeter Sentry
-                    </button>
+                  <div style={{ marginTop: '6px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Enter webcam device index (e.g. 0), RTSP stream URL (rtsp://...), or upload video file.
+                    </span>
                   </div>
+
                 </div>
               </div>
 

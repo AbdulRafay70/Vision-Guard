@@ -44,10 +44,11 @@ def main():
     warnings = config.validate_config()
 
     print("\n============================================================")
-    print("  [+] VISIONGUARD CONTROL CENTER -- WEB SERVER")
+    print("  [+] VISIONGUARD BACKEND API SERVER")
     print("============================================================")
-    print(f"  Dashboard URL: http://localhost:{config.WEB_PORT}")
-    print(f"  Live Network:  http://{config.WEB_HOST}:{config.WEB_PORT}")
+    print(f"  Backend API URL: http://localhost:{config.WEB_PORT}")
+    print(f"  Swagger Docs:    http://localhost:{config.WEB_PORT}/docs")
+    print(f"  Live Network API: http://{config.WEB_HOST}:{config.WEB_PORT}")
     if warnings:
         print(f"\n  [!] {len(warnings)} config warning(s):")
         for w in warnings:

@@ -10,49 +10,55 @@ import {
   Clock, 
   ChevronRight,
   Sparkles,
-  Volume2
+  Volume2,
+  ShieldCheck,
+  Radio,
+  Eye
 } from 'lucide-react';
 
 const EVENT_ICONS = {
-  fire: <Flame className="text-red" size={20} />,
-  car_accident: <Car className="text-amber" size={20} />,
-  bike_accident: <Car className="text-amber" size={20} />,
-  fight: <Users className="text-red" size={20} />,
-  robbery: <Skull className="text-red" size={20} />,
-  kidnapping: <ShieldAlert className="text-red" size={20} />,
-  crowd_gathering: <Users className="text-yellow" size={20} />,
-  loitering: <Clock className="text-accent" size={20} />,
+  fire: <Flame className="text-red" size={18} />,
+  car_accident: <Car className="text-amber" size={18} />,
+  bike_accident: <Car className="text-amber" size={18} />,
+  fight: <Users className="text-red" size={18} />,
+  robbery: <Skull className="text-red" size={18} />,
+  kidnapping: <ShieldAlert className="text-red" size={18} />,
+  crowd_gathering: <Users className="text-amber" size={18} />,
+  loitering: <Clock className="text-indigo" size={18} />,
 };
 
-export default function AlertFeed({ alerts, narrations, onAlertClick }) {
+export default function AlertFeed({ alerts = [], narrations = [], onAlertClick }) {
   const latestNarration = narrations[0];
 
   return (
-    <div className="alert-panel glass-panel">
+    <div className="alert-panel exec-card">
       {/* Panel Header */}
       <div className="panel-header">
         <div className="header-title-row">
           <div className="flex items-center gap-2">
-            <AlertTriangle size={18} className="text-red" />
+            <AlertTriangle size={18} className="text-amber" />
             <span className="panel-heading">INCIDENT & THREAT FEED</span>
           </div>
-          <span className="badge-count font-mono">
-            {alerts.length} EVENTS
+          <span className={`badge-count font-mono ${alerts.length > 0 ? 'badge-alert' : ''}`}>
+            {alerts.length} THREATS
           </span>
         </div>
       </div>
 
-      {/* Real-time AI Bilingual Narration Banner (Urdu + English) */}
-      {latestNarration && (
-        <div className="narration-card glass-panel">
+      {/* Real-Time AI Bilingual Narration Banner (Urdu + English) */}
+      {latestNarration ? (
+        <div className="narration-card">
           <div className="narration-header">
-            <div className="flex items-center gap-1">
-              <Sparkles size={14} className="text-accent" />
-              <span className="narration-title">VOICE SYNTHESIS INTELLIGENCE</span>
+            <div className="flex items-center gap-2">
+              <Sparkles size={14} className="text-indigo" />
+              <span className="narration-title">AI NARRATOR AUDIO FEED</span>
             </div>
-            <span className="narration-tag font-mono">
-              {latestNarration.event_type?.toUpperCase()}
-            </span>
+            <div className="audio-wave-bars">
+              <span className="wave-bar b1"></span>
+              <span className="wave-bar b2"></span>
+              <span className="wave-bar b3"></span>
+              <span className="wave-bar b4"></span>
+            </div>
           </div>
           
           {latestNarration.english && (
@@ -67,20 +73,35 @@ export default function AlertFeed({ alerts, narrations, onAlertClick }) {
             </p>
           )}
         </div>
+      ) : (
+        <div className="narration-idle-card">
+          <div className="flex items-center gap-2">
+            <Radio size={14} className="text-emerald pulse-green" />
+            <span className="idle-label">AI Neural Listener Standing By</span>
+          </div>
+          <span className="idle-sub">Bilingual voice alerts trigger upon threat detection</span>
+        </div>
       )}
 
       {/* Scrollable Alerts List */}
       <div className="alerts-container">
         {alerts.length === 0 ? (
           <div className="alerts-empty-state">
-            <ShieldAlert size={42} className="text-muted opacity-40 mb-3" />
-            <h3>Perimeter Clear</h3>
-            <p>VisionGuard AI is actively scanning camera feeds for behavioral anomalies & threats.</p>
+            <div className="radar-scanner-circle">
+              <div className="radar-sweep-beam"></div>
+              <ShieldCheck size={36} className="text-emerald radar-center-icon" />
+            </div>
+            <h4>Perimeter Secure</h4>
+            <p>VisionGuard AI neural engine is actively scanning CCTV streams for behavioral anomalies & threats.</p>
+            <div className="radar-sensor-badge">
+              <span className="live-dot pulse-green"></span>
+              <span>All Monitored Sectors Normal</span>
+            </div>
           </div>
         ) : (
           alerts.map((alert, idx) => {
             const riskClass = (alert.risk_level || 'LOW').toLowerCase();
-            const icon = EVENT_ICONS[alert.event_type] || <AlertTriangle size={20} />;
+            const icon = EVENT_ICONS[alert.event_type] || <AlertTriangle size={18} />;
 
             return (
               <div 
@@ -94,19 +115,21 @@ export default function AlertFeed({ alerts, narrations, onAlertClick }) {
                 <div className="alert-body">
                   <div className="alert-meta-top">
                     <div className="alert-icon-title">
-                      <span className="alert-emoji">{alert.emoji || '⚠️'}</span>
-                      <span className="alert-type font-mono">
-                        {alert.event_type ? alert.event_type.replace(/_/g, ' ').toUpperCase() : 'SECURITY INCIDENT'}
+                      <span className="alert-emoji-icon">
+                        {EVENT_ICONS[alert.event_type] || <AlertTriangle size={18} className="text-amber" />}
                       </span>
+                      <strong className="alert-type">
+                        {alert.event_type ? alert.event_type.replace(/_/g, ' ').toUpperCase() : 'SECURITY INCIDENT'}
+                      </strong>
                     </div>
                     <span className={`risk-pill pill-${riskClass} font-mono`}>
                       {alert.risk_level} {alert.risk_score ? `(${alert.risk_score}%)` : ''}
                     </span>
                   </div>
 
-                  <div className="alert-description">
+                  <p className="alert-description">
                     {alert.description}
-                  </div>
+                  </p>
 
                   <div className="alert-footer-info">
                     <div className="dispatch-badge">
