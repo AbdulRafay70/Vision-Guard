@@ -377,7 +377,8 @@ class SpecialistWorker:
         Caches keypoints with track association and monotonic timestamps.
         """
         t0 = time.monotonic()
-        persons = [t for t in tracks if t.category == "person"]
+        # Check tracks that are classified as person or have vertical human-like aspect ratio (H > 1.1*W)
+        persons = [t for t in tracks if t.category == "person" or ((t.bbox[3] - t.bbox[1]) > (t.bbox[2] - t.bbox[0]) * 1.1)]
         if not persons:
             poses = []
             max_conf = 0.0

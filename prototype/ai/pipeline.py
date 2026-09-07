@@ -17,6 +17,7 @@ from ai.detector import ObjectDetector, Detection
 from ai.tracker import ObjectTracker, Track
 from ai.pose import PoseEstimator, PoseResult
 from ai.specialist_worker import SpecialistWorker, ResultStatus
+from utils import bbox_iou
 
 import config
 
@@ -226,6 +227,20 @@ class AIPipeline:
         if pose_res and pose_res.is_display_valid and pose_res.data:
             poses = pose_res.data
 
+        # Semantic Pose-Guided Correction: If a human skeleton is confirmed inside an object/vehicle box (e.g. firefighter misclassified as car)
+        if poses:
+            for pose in poses:
+                valid_kps = sum(1 for kp in pose.keypoints if len(kp) > 2 and kp[2] > 0.20)
+                if valid_kps >= 4:
+                    for track in tracks:
+                        if track.category != "person" and bbox_iou(pose.bbox, track.bbox) > 0.20:
+                            track.class_name = "person"
+                            track.category = "person"
+                    for det in detections:
+                        if det.category != "person" and bbox_iou(pose.bbox, det.bbox) > 0.20:
+                            det.class_name = "person"
+                            det.category = "person"
+
         # Step 5: VIOLENCE CLASSIFICATION — Retrieved exclusively from async specialist cache
         violence_results = []
         viol_res = specialist_results.get("violence")
@@ -279,12 +294,25 @@ class AIPipeline:
             weapon_detections = self._last_weapon_detections
         detections.extend(weapon_detections)
 
-        num_persons = len([t for t in tracks if t.category == "person"])
+        num_persons = len([t for t in tracks if t.category == "person" or ((t.bbox[3] - t.bbox[1]) > (t.bbox[2] - t.bbox[0]) * 1.1)])
         poses = self._run_pose_conditional(frame, num_persons)
         if poses and tracks:
             poses = self.pose_estimator.match_poses_to_tracks(poses, tracks)
             poses = self.pose_estimator.smooth_keypoints(poses)
             self._last_poses = poses
+
+            # Semantic Pose-Guided Correction
+            for pose in poses:
+                valid_kps = sum(1 for kp in pose.keypoints if len(kp) > 2 and kp[2] > 0.20)
+                if valid_kps >= 4:
+                    for track in tracks:
+                        if track.category != "person" and bbox_iou(pose.bbox, track.bbox) > 0.20:
+                            track.class_name = "person"
+                            track.category = "person"
+                    for det in detections:
+                        if det.category != "person" and bbox_iou(pose.bbox, det.bbox) > 0.20:
+                            det.class_name = "person"
+                            det.category = "person"
         elif not num_persons:
             self._last_poses = []
             self.pose_estimator.reset()

@@ -154,6 +154,15 @@ class ObjectTracker:
                     continue
 
                 class_name = config.COCO_CLASSES_OF_INTEREST[class_id]
+
+                # Aspect-ratio sanity check: Vehicles (car/truck/bus) are wide/horizontal.
+                # A tall vertical box (H > 1.35*W) with human-like height is a person in bulky gear (e.g. firefighter/SCBA).
+                box_w = max(1.0, x2 - x1)
+                box_h = max(1.0, y2 - y1)
+                if class_name in ("car", "truck", "bus") and (box_h / box_w) > 1.35:
+                    class_name = "person"
+                    class_id = 0
+
                 category = _categorize_class(class_name)
 
                 # Build Detection object (for event detectors + display)

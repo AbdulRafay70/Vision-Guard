@@ -197,6 +197,24 @@ class PoseEstimator:
         if not poses or not tracks:
             return poses
 
+        # Pose-Guided Semantic Correction: If a track was misclassified (e.g. firefighter misclassified as car/truck/chair),
+        # but contains a valid human pose with >= 4 keypoints, reclassify it to person.
+        for pose in poses:
+            valid_kps = sum(1 for kp in pose.keypoints if len(kp) > 2 and kp[2] > 0.20)
+            if valid_kps >= 4:
+                for track in tracks:
+                    if getattr(track, "category", "") != "person":
+                        iou = bbox_iou(pose.bbox, track.bbox)
+                        tb = track.bbox
+                        t_h = tb[3] - tb[1]
+                        t_w = max(1.0, tb[2] - tb[0])
+                        # If overlapping and tall/vertical human profile
+                        if iou > 0.20 or (t_h / t_w > 1.1 and bbox_iou(pose.bbox, track.bbox) > 0.15):
+                            logger.info("[POSE] Correcting track %s (%s) -> person based on verified human pose (kps: %d)",
+                                        getattr(track, "vg_id", track.track_id), track.class_name, valid_kps)
+                            track.class_name = "person"
+                            track.category = "person"
+
         person_tracks = [t for t in tracks if getattr(t, "category", "") == "person"]
         if not person_tracks:
             return poses
