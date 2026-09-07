@@ -1,0 +1,42 @@
+# VisionGuard Prototype - Requirements
+# 
+# IMPORTANT FOR GPU ACCELERATION (NVIDIA Quadro T1000 / CUDA):
+# First install PyTorch with CUDA 12.1 index URL:
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# 
+# Then install remaining requirements:
+#   pip install -r requirements.txt
+
+# Core AI
+ultralytics>=8.0.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# Tracking & Analytics
+lapx>=0.5.0
+scipy>=1.10.0
+filterpy>=1.4.5
+
+# Audio classification (Optional / Event features)
+sounddevice>=0.4.6
+soundfile>=0.12.0
+
+# LLM & Multimodal AI
+google-genai>=0.1.0
+
+# Web & API Server
+fastapi>=0.100.0
+uvicorn>=0.23.0
+websockets>=11.0
+python-multipart>=0.0.6
+jinja2>=3.1.0
+
+# Utilities
+pillow>=10.0.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+colorama>=0.4.6
+
+# Stress Test / System Monitoring (Day 6-8 — Rafay)
+psutil>=5.9.0            # Process RSS memory tracking
+nvidia-ml-py>=12.535.0   # GPU temperature / VRAM / utilization (NVML)

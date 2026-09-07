@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VisionGuard — AI City Protection System</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="navbar">
+        <div class="brand">
+            <span class="brand-icon">🛡️</span>
+            <span>VISIONGUARD <small style="font-size: 11px; opacity: 0.7;">PROTOTYPE v0.1</small></span>
+        </div>
+        <div class="nav-stats">
+            <div class="stat-badge">
+                <div class="pulse-dot"></div>
+                <span>SYSTEM ONLINE</span>
+            </div>
+            <div class="stat-badge">
+                <i class="fa-solid fa-microchip"></i>
+                <span id="ai-fps">FPS: --</span>
+            </div>
+            <div class="stat-badge">
+                <i class="fa-solid fa-video"></i>
+                <span>CAMERAS: <strong id="active-cams">1 ACTIVE</strong></span>
+            </div>
+            <div class="stat-badge" id="voice-btn" title="Click and speak a command" style="cursor: pointer;">
+                <i class="fa-solid fa-microphone"></i>
+                <span id="voice-status">VOICE: OFF</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Dashboard Grid -->
+    <main class="dashboard-grid">
+        
+        <!-- Left: Live Camera Section & CCTV Control Center -->
+        <section class="camera-section">
+            <!-- CCTV Feeds Control Bar -->
+            <div class="cctv-control-bar">
+                <div class="cctv-tabs" id="cctv-tabs">
+                    <!-- Dynamic Camera Tabs injected here -->
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn-danger" id="disconnect-cam-btn" title="Disconnect Active Camera">
+                        <i class="fa-solid fa-power-off"></i> Disconnect
+                    </button>
+                    <button class="btn-primary" id="open-connect-modal-btn">
+                        <i class="fa-solid fa-plus"></i> Connect CCTV
+                    </button>
+                </div>
+            </div>
+
+            <div class="video-container">
+                <div class="camera-header-overlay">
+                    <i class="fa-solid fa-camera"></i>
+                    <span id="cam-name">Loading Camera Stream...</span>
+                </div>
+                <!-- MJPEG Video Feed Stream -->
+                <img id="live-stream" src="/video_feed/cam_01" class="video-stream" alt="Live Camera Feed">
+            </div>
+
+            <!-- Multi-Metric Performance Telemetry HUD -->
+            <div class="telemetry-hud-container">
+                <div class="hud-row">
+                    <div class="hud-metric-group">
+                        <div class="hud-metric">
+                            <span class="hud-metric-label">Camera Acq</span>
+                            <span class="hud-metric-value" id="hud-cam-fps">-- FPS</span>
+                        </div>
+                        <div class="hud-metric">
+                            <span class="hud-metric-label">Presentation</span>
+                            <span class="hud-metric-value fresh" id="hud-disp-fps">-- FPS</span>
+                        </div>
+                        <div class="hud-metric">
+                            <span class="hud-metric-label">Unique Disp</span>
+                            <span class="hud-metric-value" id="hud-unique-fps">-- FPS</span>
+                        </div>
+                        <div class="hud-metric">
+                            <span class="hud-metric-label">Duplicate Frm</span>
+                            <span class="hud-metric-value" id="hud-duplicate-frames">--</span>
+                        </div>
+                        <div class="hud-metric">
+                            <span class="hud-metric-label">Frame Age</span>
+                            <span class="hud-metric-value fresh" id="hud-frame-age">-- ms</span>
+                        </div>
+                        <div class="hud-metric">
+                            <span class="hud-metric-label">P95 Age</span>
+                            <span class="hud-metric-value" id="hud-p95-age">-- ms</span>
+                        </div>
+                        <div class="hud-metric">
+                            <span class="hud-metric-label">AI Tracking</span>
+                            <span class="hud-metric-value" id="hud-ai-fps">-- FPS</span>
+                        </div>
+                    </div>
+                    <div class="hud-metric-group">
+                        <div class="hud-metric">
+                            <span class="hud-metric-label">GPU VRAM</span>
+                            <span class="hud-metric-value" id="hud-vram">-- MB</span>
+                        </div>
+                        <div class="hud-metric">
+                            <span class="hud-metric-label">CPU Load</span>
+                            <span class="hud-metric-value" id="hud-cpu">-- %</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="hud-row" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
+                    <div class="hud-metric-group">
+                        <div class="hud-metric">
+                            <span class="hud-metric-label">Specialists</span>
+                            <span class="hud-metric-value" id="hud-specialists" style="font-size: 11px;">
+                                🔥 Fire: -- | 🔪 Weapon: -- | 🧍 Pose: --
+                            </span>
+                        </div>
+                    </div>
+                    <div class="hud-metric-group">
+                        <div class="hud-metric">
+                            <span class="hud-metric-label">Context Governor</span>
+                            <span class="hud-metric-value governor" id="hud-governor">
+                                Active / Context governor online
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CCTV Connection Modal -->
+        <div id="cctv-modal" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><i class="fa-solid fa-video text-accent"></i> Connect CCTV Camera Feed</h3>
+                    <button class="modal-close-btn" id="close-modal-btn">&times;</button>
+                </div>
+                <form id="cctv-connect-form">
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label>Camera Name / Sector Label</label>
+                            <input type="text" id="modal-cam-name" class="form-control" placeholder="e.g. Sector 2: Main Gate" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Camera ID (Optional)</label>
+                            <input type="text" id="modal-cam-id" class="form-control" placeholder="e.g. cam_gate2">
+                        </div>
+                        <div class="form-group">
+                            <label>Stream Source Type</label>
+                            <select id="modal-cam-type" class="form-control">
+                                <option value="video">Test Video File (.mp4)</option>
+                                <option value="webcam">Integrated / USB Webcam</option>
+                                <option value="rtsp">RTSP IP Stream (H.264/H.265)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label id="modal-source-label">Stream Source / Video Path</label>
+                            <input type="text" id="modal-cam-source" class="form-control" placeholder="prototype/test_videos/violence_group_of_thugs_beating_someone.mp4" required>
+                            <small style="color: var(--text-muted); font-size: 11px;">
+                                Quick Presets: 
+                                <a href="#" onclick="setPreset('prototype/test_videos/violence_group_of_thugs_beating_someone.mp4', 'video'); return false;" style="color: var(--accent-blue);">Threat Video</a> | 
+                                <a href="#" onclick="setPreset('prototype/test_videos/4116863-hd_1920_1080_30fps.mp4', 'video'); return false;" style="color: var(--accent-blue);">Traffic 1080p</a> | 
+                                <a href="#" onclick="setPreset('0', 'webcam'); return false;" style="color: var(--accent-blue);">Webcam 0</a>
+                            </small>
+                        </div>
+                        <div id="modal-status-msg" style="font-size: 12px; display: none; padding: 6px; border-radius: 4px;"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-secondary" id="cancel-modal-btn">Cancel</button>
+                        <button type="submit" class="btn-primary" id="modal-submit-btn">
+                            <i class="fa-solid fa-link"></i> Connect Stream
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Right: Alert Sidebar -->
+        <aside class="sidebar">
+            
+            <!-- Real-Time Alerts Panel -->
+            <div class="panel alert-section" style="flex: 1;">
+                <div class="panel-title">
+                    <span><i class="fa-solid fa-triangle-exclamation" style="color: #ff3366;"></i> REAL-TIME THREAT ALERTS</span>
+                    <span id="alert-count-badge" style="background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 10px; font-size: 11px;">0 ALERTS</span>
+                </div>
+                <div class="alert-feed" id="alert-feed">
+                    <div style="text-align: center; color: #8a99ad; padding: 40px 0; font-size: 13px;">
+                        <i class="fa-solid fa-shield-halved" style="font-size: 32px; margin-bottom: 10px; opacity: 0.4;"></i>
+                        <p>No active threats detected.</p>
+                        <small>System continuously monitoring camera feeds...</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Evidence Gallery Panel -->
+            <div class="panel evidence-section">
+                <div class="panel-title">
+                    <span><i class="fa-solid fa-folder-open" style="color: #00d2ff;"></i> EVIDENCE SNAPSHOTS</span>
+                </div>
+                <div class="evidence-grid" id="evidence-grid">
+                    <div style="grid-column: 1 / -1; text-align: center; color: #8a99ad; padding: 20px 0; font-size: 12px;">
+                        No evidence captures yet.
+                    </div>
+                </div>
+            </div>
+
+        </aside>
+    </main>
+
+    <!-- Audio Alert Element -->
+    <audio id="siren-sound" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto"></audio>
+
+    <script>
+        // Real-Time WebSocket for Alert Push
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/alerts`;
+        const socket = new WebSocket(wsUrl);
+
+        const alertFeed = document.getElementById('alert-feed');
+        const alertCountBadge = document.getElementById('alert-count-badge');
+        const sirenSound = document.getElementById('siren-sound');
+        let totalAlerts = 0;
+
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+
+            if (data.type === "INIT_STATUS" || data.type === "STATUS_UPDATE") {
+                if (data.ai_fps) {
+                    document.getElementById('ai-fps').innerText = `FPS: ${data.ai_fps}`;
+                }
+            } else if (data.type === "ALERT_NARRATION") {
+                // Bilingual (English + Urdu) AI narration for the alert
+                speakNarration(data);
+            } else if (data.type === "NEW_ALERT") {
+                totalAlerts++;
+                alertCountBadge.innerText = `${totalAlerts} ALERTS`;
+                
+                // Clear placeholder if first alert
+                if (totalAlerts === 1) {
+                    alertFeed.innerHTML = '';
+                }
+
+                // Play Audio Alarm for Critical / High alerts
+                if (data.risk_level === "CRITICAL" || data.risk_level === "HIGH") {
+                    sirenSound.play().catch(e => console.log("Audio play blocked by browser"));
+                }
+
+                // Render Alert Card
+                const card = document.createElement('div');
+                card.className = `alert-card ${data.risk_level}`;
+                card.innerHTML = `
+                    <div class="alert-header">
+                        <span class="alert-title">${data.emoji} ${data.event_type.toUpperCase()}</span>
+                        <span class="alert-badge">${data.risk_level} (${data.risk_score}%)</span>
+                    </div>
+                    <div class="alert-desc">${data.description}</div>
+                    <div class="alert-footer">
+                        <span><i class="fa-solid fa-building-shield"></i> ${data.department} (${data.dial})</span>
+                        <span>${new Date().toLocaleTimeString()}</span>
+                    </div>
+                `;
+                alertFeed.prepend(card);
+            }
+        };
+
+        // Fetch Evidence Snapshots periodically
+        async function loadEvidence() {
+            try {
+                const res = await fetch('/api/evidence');
+                const files = await res.json();
+                const grid = document.getElementById('evidence-grid');
+                if (files.length > 0) {
+                    grid.innerHTML = files.slice(0, 4).map(f => `
+                        <a href="/evidence_files/${f}" target="_blank">
+                            <img src="/evidence_files/${f}" class="evidence-thumb" alt="Evidence">
+                        </a>
+                    `).join('');
+                }
+            } catch (e) {
+                console.error("Error loading evidence", e);
+            }
+        }
+        setInterval(loadEvidence, 5000);
+        loadEvidence();
+
+        // ── Bilingual Narration (Day 5 — Rafay) ─────────────────────────
+        // Speak + display Urdu/English narration pushed with each alert.
+        function speakNarration(data) {
+            if (!data || (!data.english && !data.urdu)) return;
+            if ('speechSynthesis' in window) {
+                try {
+                    if (data.english) {
+                        const en = new SpeechSynthesisUtterance(data.english);
+                        en.lang = 'en-US';
+                        window.speechSynthesis.speak(en);
+                    }
+                    if (data.urdu) {
+                        const ur = new SpeechSynthesisUtterance(data.urdu);
+                        ur.lang = 'ur-PK';
+                        window.speechSynthesis.speak(ur);
+                    }
+                } catch (e) {
+                    console.log('Narration speech failed', e);
+                }
+            }
+        }
+
+        // ── Voice Command Engine (Day 5 — Web Speech API → /ws/voice) ────
+        const voiceBtn = document.getElementById('voice-btn');
+        const voiceStatus = document.getElementById('voice-status');
+        const voiceWsUrl = `${wsProtocol}//${window.location.host}/ws/voice`;
+        let voiceSocket = null;
+        let recognition = null;
+        let listening = false;
+
+        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        function ensureVoiceSocket() {
+            if (voiceSocket && voiceSocket.readyState === WebSocket.OPEN) return voiceSocket;
+            voiceSocket = new WebSocket(voiceWsUrl);
+            voiceSocket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                if (data.type === 'VOICE_RESPONSE') {
+                    showVoiceResponse(`🎙️ "${data.text}" → ${data.response}`);
+                    speakText(data.response);
+                } else if (data.type === 'VOICE_ERROR') {
+                    showVoiceResponse(`⚠️ ${data.detail}`);
+                }
+            };
+            return voiceSocket;
+        }
+
+        function speakText(txt) {
+            if (txt && 'speechSynthesis' in window) {
+                const u = new SpeechSynthesisUtterance(txt);
+                u.lang = 'en-US';
+                window.speechSynthesis.speak(u);
+            }
+        }
+
+        function showVoiceResponse(msg) {
+            let bar = document.getElementById('voice-response-bar');
+            if (!bar) {
+                bar = document.createElement('div');
+                bar.id = 'voice-response-bar';
+                bar.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);'
+                    + 'background:rgba(10,20,35,0.92);border:1px solid #00d2ff;color:#e6f1ff;'
+                    + 'padding:10px 18px;border-radius:10px;font-size:13px;z-index:9999;max-width:80%;'
+                    + 'box-shadow:0 0 20px rgba(0,210,255,0.3);';
+                document.body.appendChild(bar);
+            }
+            bar.innerText = msg;
+            bar.style.display = 'block';
+            clearTimeout(bar._t);
+            bar._t = setTimeout(() => { bar.style.display = 'none'; }, 8000);
+        }
+
+        function toggleListening() {
+            if (!SpeechRec) {
+                showVoiceResponse('⚠️ Web Speech API not supported in this browser. Use Chrome.');
+                return;
+            }
+            if (listening) {
+                if (recognition) recognition.stop();
+                return;
+            }
+            ensureVoiceSocket();
+            recognition = new SpeechRec();
+            recognition.lang = 'en-US';
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+
+            recognition.onstart = () => {
+                listening = true;
+                voiceStatus.innerText = 'VOICE: LISTENING';
+                voiceBtn.style.color = '#ff3366';
+            };
+            recognition.onresult = (e) => {
+                const text = e.results[0][0].transcript;
+                if (voiceSocket && voiceSocket.readyState === WebSocket.OPEN) {
+                    voiceSocket.send(JSON.stringify({ text }));
+                }
+            };
+            recognition.onerror = (e) => {
+                showVoiceResponse(`⚠️ Voice error: ${e.error}`);
+            };
+            recognition.onend = () => {
+                listening = false;
+                voiceStatus.innerText = 'VOICE: OFF';
+                voiceBtn.style.color = '';
+            };
+            recognition.start();
+        }
+
+        voiceBtn.addEventListener('click', toggleListening);
+
+        // ═════════════════════════════════════════════════════════════════════
+        // CCTV CONTROL CENTER & MULTI-METRIC TELEMETRY ENGINE (Phase 6)
+        // ═════════════════════════════════════════════════════════════════════
+        let currentCamId = 'cam_01';
+        let availableCameras = [];
+
+        const cctvTabs = document.getElementById('cctv-tabs');
+        const liveStream = document.getElementById('live-stream');
+        const camNameEl = document.getElementById('cam-name');
+        const disconnectBtn = document.getElementById('disconnect-cam-btn');
+
+        // Modal elements
+        const modal = document.getElementById('cctv-modal');
+        const openModalBtn = document.getElementById('open-connect-modal-btn');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const cancelModalBtn = document.getElementById('cancel-modal-btn');
+        const connectForm = document.getElementById('cctv-connect-form');
+        const modalStatus = document.getElementById('modal-status-msg');
+
+        openModalBtn.onclick = () => { modal.style.display = 'flex'; modalStatus.style.display = 'none'; };
+        closeModalBtn.onclick = () => { modal.style.display = 'none'; };
+        cancelModalBtn.onclick = () => { modal.style.display = 'none'; };
+        window.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+
+        window.setPreset = function(src, type) {
+            document.getElementById('modal-cam-source').value = src;
+            document.getElementById('modal-cam-type').value = type;
+        };
+
+        // Switch active camera feed smoothly without restarting AI scheduler
+        window.switchCamera = function(camId, name) {
+            currentCamId = camId;
+            liveStream.src = `/video_feed/${camId}`;
+            camNameEl.innerHTML = `<i class="fa-solid fa-camera"></i> ${name || camId.toUpperCase()} (Live Decoupled Stream)`;
+            renderCameraTabs();
+        };
+
+        function renderCameraTabs() {
+            if (!availableCameras.length) return;
+            cctvTabs.innerHTML = availableCameras.map(cam => {
+                const isActive = cam.id === currentCamId;
+                const statusDot = cam.active ? 'color: #00e676;' : 'color: #8a99ad;';
+                return `
+                    <button class="cctv-tab-btn ${isActive ? 'active' : ''}" onclick="switchCamera('${cam.id}', '${cam.name}')">
+                        <i class="fa-solid fa-circle" style="font-size: 8px; ${statusDot}"></i>
+                        <span>${cam.name}</span>
+                        ${cam.stats?.display_fps ? `<small style="opacity: 0.7;">(${cam.stats.display_fps} FPS)</small>` : ''}
+                    </button>
+                `;
+            }).join('');
+        }
+
+        // Poll cameras list and latency telemetry
+        async function fetchCameras() {
+            try {
+                const res = await fetch('/api/cameras');
+                if (!res.ok) return;
+                availableCameras = await res.json();
+                renderCameraTabs();
+
+                // Update active camera latency metrics in HUD
+                const currentCam = availableCameras.find(c => c.id === currentCamId) || availableCameras[0];
+                if (currentCam && currentCam.stats) {
+                    const s = currentCam.stats;
+                    document.getElementById('hud-cam-fps').innerText = `${s.camera_fps || '--'} FPS`;
+                    document.getElementById('hud-disp-fps').innerText = `${s.display_fps || '--'} FPS`;
+                    document.getElementById('hud-unique-fps').innerText = `${s.unique_fps || '--'} FPS`;
+                    document.getElementById('hud-duplicate-frames').innerText = `${s.duplicate_frames || 0} f`;
+                    document.getElementById('hud-frame-age').innerText = `${s.avg_frame_age_ms || '--'} ms`;
+                    document.getElementById('hud-p95-age').innerText = `${s.p95_frame_age_ms || '--'} ms`;
+                }
+            } catch (err) {
+                console.debug("Camera poll failed", err);
+            }
+        }
+
+        // Poll AI Specialists and Context Governor Telemetry
+        async function fetchTelemetry() {
+            try {
+                const res = await fetch('/api/telemetry/specialists');
+                if (!res.ok) return;
+                const data = await res.json();
+
+                const spec = data.specialists || {};
+                const gov = data.governor || {};
+                const hw = data.hardware || {};
+
+                document.getElementById('hud-specialists').innerText = 
+                    `🔥 Fire: ${spec.fire_fps || '--'} FPS | 🔪 Weapon: ${spec.weapon_fps || '--'} FPS | 🧍 Pose: ${spec.pose_fps || '--'} FPS | 👊 Violence: ${spec.violence_fps || '--'} FPS`;
+
+                document.getElementById('hud-governor').innerText = 
+                    `${gov.decision || 'Active'} [${Math.round((gov.normal_scene_conf || 0)*100)}% normal]`;
+
+                document.getElementById('hud-vram').innerText = `${hw.vram_mb || '--'} MB`;
+                document.getElementById('hud-cpu').innerText = `${hw.cpu_percent || '--'} %`;
+
+                const aiFpsEl = document.getElementById('ai-fps');
+                const hudAiEl = document.getElementById('hud-ai-fps');
+                if (spec.normal_scene_fps !== undefined) {
+                    hudAiEl.innerText = `${data.specialists.weapon_fps ? (data.specialists.weapon_fps * 2.5).toFixed(1) : '--'} FPS`;
+                }
+            } catch (err) {
+                console.debug("Telemetry poll failed", err);
+            }
+        }
+
+        // Connect Camera Form Submit
+        connectForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const submitBtn = document.getElementById('modal-submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Connecting...`;
+            modalStatus.style.display = 'none';
+
+            const payload = {
+                name: document.getElementById('modal-cam-name').value.trim(),
+                id: document.getElementById('modal-cam-id').value.trim() || undefined,
+                type: document.getElementById('modal-cam-type').value,
+                source: document.getElementById('modal-cam-source').value.trim(),
+            };
+
+            try {
+                const res = await fetch('/api/cameras/connect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const respData = await res.json();
+                if (res.ok) {
+                    modalStatus.style.display = 'block';
+                    modalStatus.style.background = 'rgba(0, 230, 118, 0.2)';
+                    modalStatus.style.color = '#00e676';
+                    modalStatus.innerText = `Camera "${payload.name}" connected successfully!`;
+                    setTimeout(() => {
+                        modal.style.display = 'none';
+                        switchCamera(respData.id, payload.name);
+                        fetchCameras();
+                    }, 800);
+                } else {
+                    modalStatus.style.display = 'block';
+                    modalStatus.style.background = 'rgba(255, 51, 102, 0.2)';
+                    modalStatus.style.color = '#ff3366';
+                    modalStatus.innerText = `Connection failed: ${respData.detail || 'Unknown error'}`;
+                }
+            } catch (err) {
+                modalStatus.style.display = 'block';
+                modalStatus.style.background = 'rgba(255, 51, 102, 0.2)';
+                modalStatus.style.color = '#ff3366';
+                modalStatus.innerText = `Connection error: ${err.message}`;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = `<i class="fa-solid fa-link"></i> Connect Stream`;
+            }
+        };
+
+        // Disconnect Active Camera
+        disconnectBtn.onclick = async () => {
+            if (!confirm(`Disconnect camera feed "${currentCamId}"?`)) return;
+            try {
+                const res = await fetch(`/api/cameras/disconnect/${currentCamId}`, { method: 'POST' });
+                if (res.ok) {
+                    showVoiceResponse(`Camera ${currentCamId} disconnected.`);
+                    await fetchCameras();
+                    if (availableCameras.length > 0) {
+                        switchCamera(availableCameras[0].id, availableCameras[0].name);
+                    }
+                }
+            } catch (err) {
+                alert(`Failed to disconnect: ${err.message}`);
+            }
+        };
+
+        // Polling cycles
+        setInterval(fetchCameras, 1500);
+        setInterval(fetchTelemetry, 1500);
+        fetchCameras();
+        fetchTelemetry();
+    </script>
+</body>
+</html>

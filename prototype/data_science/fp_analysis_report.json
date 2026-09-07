@@ -1,0 +1,133 @@
+{
+  "timestamp": "2026-09-03T22:37:23.426765",
+  "total_evidence_files": 7,
+  "event_frequency": {
+    "crowd_crush": 3,
+    "fight": 3,
+    "robbery": 1
+  },
+  "temporal_clusters": 2,
+  "rapid_fire_alerts": 1,
+  "low_light_events": 2,
+  "current_thresholds": {
+    "detection_confidence": 0.3,
+    "detection_iou": 0.4,
+    "fire_min_confidence": 0.7,
+    "fire_min_area_percent": 1.0,
+    "fight_proximity": 90.0,
+    "fight_arm_velocity": 16.0,
+    "fight_min_duration": 2.5,
+    "accident_velocity_drop": 15.0,
+    "accident_overlap_iou": 0.15,
+    "robbery_stop_duration": 3.0,
+    "kidnapping_struggle": 20.0,
+    "crowd_warning_ratio": 0.7,
+    "crowd_danger_ratio": 0.9,
+    "loiter_time": 300.0,
+    "weapon_near_person": 250.0,
+    "weapon_threat_duration": 0.5,
+    "audio_confidence": 0.4,
+    "risk_auto_dispatch": 85.0,
+    "risk_team_review": 50.0,
+    "event_min_persistence": 1.0
+  },
+  "recommendations": [
+    {
+      "parameter": "CROWD_DANGER_RATIO",
+      "current": 0.9,
+      "recommended": 0.95,
+      "reason": "Crowd crush detected 3 times. Raising threshold reduces sensitivity."
+    },
+    {
+      "parameter": "EVENT_MIN_PERSISTENCE_SECONDS",
+      "current": 1.0,
+      "recommended": 1.5,
+      "reason": "Duplicate rapid-fire alerts detected (1 instances). Increase cooldown."
+    },
+    {
+      "parameter": "DETECTION_CONF_THRESHOLD",
+      "current": 0.3,
+      "recommended": 0.35,
+      "reason": "2 events in low-light conditions. Higher confidence reduces noise."
+    }
+  ],
+  "events": [
+    {
+      "file": "evidence\\crowd_crush_20260825_041330.jpg",
+      "filename": "crowd_crush_20260825_041330.jpg",
+      "event_type": "crowd_crush",
+      "timestamp": "2026-08-25T04:13:30",
+      "image_info": {
+        "resolution": "1920x1080",
+        "brightness": 73.98190104166667,
+        "file_size_kb": 465.0986328125
+      }
+    },
+    {
+      "file": "evidence\\crowd_crush_20260825_041332.jpg",
+      "filename": "crowd_crush_20260825_041332.jpg",
+      "event_type": "crowd_crush",
+      "timestamp": "2026-08-25T04:13:32",
+      "image_info": {
+        "resolution": "1920x1080",
+        "brightness": 73.98190104166667,
+        "file_size_kb": 465.0986328125
+      }
+    },
+    {
+      "file": "evidence\\crowd_crush_20260903_120447.jpg",
+      "filename": "crowd_crush_20260903_120447.jpg",
+      "event_type": "crowd_crush",
+      "timestamp": "2026-09-03T12:04:47",
+      "image_info": {
+        "resolution": "1920x1080",
+        "brightness": 73.47968074845679,
+        "file_size_kb": 470.279296875
+      }
+    },
+    {
+      "file": "evidence\\fight_20260825_041354.jpg",
+      "filename": "fight_20260825_041354.jpg",
+      "event_type": "fight",
+      "timestamp": "2026-08-25T04:13:54",
+      "image_info": {
+        "resolution": "1920x1080",
+        "brightness": 54.3286752507716,
+        "file_size_kb": 348.505859375
+      }
+    },
+    {
+      "file": "evidence\\fight_20260825_041357.jpg",
+      "filename": "fight_20260825_041357.jpg",
+      "event_type": "fight",
+      "timestamp": "2026-08-25T04:13:57",
+      "image_info": {
+        "resolution": "1920x1080",
+        "brightness": 54.3286752507716,
+        "file_size_kb": 348.505859375
+      }
+    },
+    {
+      "file": "evidence\\fight_20260903_120511.jpg",
+      "filename": "fight_20260903_120511.jpg",
+      "event_type": "fight",
+      "timestamp": "2026-09-03T12:05:11",
+      "image_info": {
+        "resolution": "1920x1080",
+        "brightness": 80.05840952932098,
+        "file_size_kb": 404.73828125
+      }
+    },
+    {
+      "file": "evidence\\robbery_20260903_120617.jpg",
+      "filename": "robbery_20260903_120617.jpg",
+      "event_type": "robbery",
+      "timestamp": "2026-09-03T12:06:17",
+      "image_info": {
+        "resolution": "1920x1080",
+        "brightness": 112.90941840277777,
+        "file_size_kb": 418.0751953125
+      }
+    }
+  ]
+}

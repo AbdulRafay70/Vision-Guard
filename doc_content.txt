@@ -1,0 +1,232 @@
+VISIONGUARD AI
+Technical System & AI Development Brief
+Real-Time Multi-Camera Situational Awareness, Event Detection & Cross-Camera Tracking
+Purpose: Define the complete engineering plan for VisionGuard as a working product rather than a UI-only prototype. The system combines live camera ingestion, GPU-accelerated video processing, object detection, tracking, activity recognition, contextual anomaly detection, event reasoning, cross-camera handoff, alerting, evidence storage, and operator monitoring.
+1. Product Definition
+VisionGuard is an AI-powered visual situational-awareness system. It receives multiple live camera streams, perceives objects and people, tracks them through time, recognizes relevant activities, evaluates the scene using context and configured rules, detects abnormal or high-risk events, and produces a continuous event state for operators.
+The system should not claim that a person is inherently a 'thief' from appearance. Instead, it detects observable behavior and produces a security event such as 'suspected unauthorized taking of an object' with confidence, evidence, and context.
+2. Core Human-Inspired Pipeline
+CAMERA → VIDEO INGESTION → DECODING → FRAME SAMPLING → VISUAL PERCEPTION
+       → OBJECT DETECTION → TRACKING → ACTIVITY RECOGNITION
+       → CONTEXT / ANOMALY ANALYSIS → EVENT REASONING
+       → RISK SCORE → RESPONSE / ALERT → CROSS-CAMERA HANDOFF
+       → DASHBOARD + EVENT LOG + EVIDENCE
+3. Camera & Network Architecture
+Production input should use PoE IP cameras supporting RTSP and preferably ONVIF. The laptop webcam can be used for early development.
+Camera type: PoE IP camera, typically 1080p or 4MP, H.264/H.265, RTSP, ONVIF, 15–30 FPS.
+Network: Gigabit Ethernet for camera-to-server traffic; PoE switch for power and connectivity.
+Inputs supported by the software abstraction: IP camera, USB/webcam, RTSP stream, recorded video, and image.
+Camera configuration should include camera_id, location, field of view, neighboring cameras, stream URL, resolution, FPS, and expected movement paths.
+Use a camera topology graph so the handoff engine knows which cameras are physically adjacent or likely successors.
+4. Separate Video Path From AI Path
+This separation is essential for smooth streaming. The browser must not wait for AI inference before receiving video.
+LIVE VIDEO PATH:
+Camera → RTSP → Media Gateway → WebRTC → Browser
+
+AI PATH:
+Camera → RTSP → Hardware Decode → Frame Queue → GPU Inference → Events
+Live video can remain 15–30 FPS while AI inference runs at a lower controlled rate such as 5–15 FPS, subject to benchmarking.
+Use hardware video decoding where available to reduce CPU overhead.
+Use bounded queues and frame-dropping policies for stale frames rather than allowing latency to grow indefinitely.
+Monitor per-camera latency, decode FPS, inference FPS, queue depth, dropped frames, GPU utilization, and VRAM.
+5. Main Software Modules
+6. AI Model Stack
+Do not deploy every model at full rate on every camera. Use a staged pipeline: cheap detection/tracking first, then invoke heavier temporal or re-identification models only when the event requires them.
+7. How Detection Actually Happens
+Camera produces a compressed video stream.
+The decoder converts the stream into timestamped frames.
+The frame processor resizes/normalizes the selected frame to the detector's input format.
+The detector predicts candidate objects with bounding boxes, class probabilities, and confidence.
+Low-confidence predictions are filtered using thresholds calibrated on validation data.
+The tracker associates detections with previous tracks using motion and appearance cues.
+Each track receives a temporary VisionGuard Track ID such as VG-104.
+Relevant tracks are passed to activity/context modules.
+The event engine combines multiple observations over time rather than triggering from a single frame whenever possible.
+Frame_t → Detector → {person, phone, bag, ...}
+              ↓
+          Tracker → Track VG-104
+              ↓
+       Temporal observations
+              ↓
+      Activity + Context Engine
+              ↓
+          Event decision
+8. Example: Suspected Mobile-Phone Taking Event
+The following example illustrates how VisionGuard could identify a suspicious taking event without relying on a single frame or simply labeling a person as a criminal.
+PERSON A enters scene
+        ↓
+Detector: person + mobile phone detected
+        ↓
+Tracker assigns VG-104
+        ↓
+Pose / interaction model observes hand-to-phone relationship
+        ↓
+Phone changes position / leaves the original zone
+        ↓
+System checks temporal sequence + configured context
+        ↓
+Possible unauthorized taking event
+        ↓
+Event confidence / risk score calculated
+        ↓
+If threshold is met: alert + evidence clip + event log
+        ↓
+If subject moves to next camera: cross-camera handoff begins
+A robust implementation should use multiple signals, for example:
+Object presence: person and phone.
+Spatial relationship: hand/phone proximity or interaction region.
+Temporal change: phone position changes across a sequence.
+Ownership/context cues where technically available, such as configured zones or interaction history.
+Human activity recognition: reaching, picking, holding, walking away, etc.
+Event persistence: the condition should be observed across multiple frames before escalation.
+Context: location, time, restricted/public zone, and configured rules.
+The system should return something like 'Suspected unauthorized taking' rather than 'Person is a thief.' This reduces false accusations and keeps the system grounded in observable evidence.
+9. Anomaly Detection
+Anomaly detection should have two complementary layers: rule-based anomalies and learned behavioral anomalies.
+Rule-based: person enters a restricted zone, object remains in a zone unexpectedly, unusual movement direction, after-hours activity.
+Learned anomaly: compare current motion/scene features with patterns learned from normal footage.
+Temporal window: evaluate sequences rather than isolated frames.
+Adaptive baseline: normal behavior may differ by camera, location, day, and time.
+Risk score: combine anomaly score with event-specific evidence and confidence.
+Risk = weighted(Object Evidence + Activity Evidence + Context Evidence + Anomaly Evidence)
+        → calibrated score → LOW / MEDIUM / HIGH
+Anomaly models should not be trained only on 'bad behavior'. A practical first approach is to collect substantial normal footage for each camera/environment and train the system to recognize deviations, then add supervised examples for specific events.
+10. Cross-Camera Tracking
+When a tracked subject leaves Camera 1 and appears in Camera 2, VisionGuard should preserve a temporary global track rather than forcing the operator to manually switch cameras.
+CAM-01 → Track VG-104 → exit zone
+                     ↓
+              camera topology
+                     ↓
+CAM-02 → candidate detection → Re-ID similarity + time + direction
+                     ↓
+              match accepted
+                     ↓
+              VG-104 continues
+                     ↓
+CAM-03 → VG-104 → CAM-04
+Use appearance embeddings for re-identification.
+Combine appearance similarity with time gap, camera adjacency, direction of travel, and spatial constraints.
+Never rely on appearance embedding alone.
+Maintain uncertainty; if the match is weak, mark it as a candidate handoff rather than a confirmed identity.
+Track a temporary system identity, not a person's real-world name.
+11. Training Strategy
+Training should be modular. Do not attempt to train the entire VisionGuard system end-to-end initially.
+12. Dataset Preparation
+Collect representative footage from the actual camera heights, lighting, angles, distances, and environments.
+Include day/night and difficult lighting if those conditions are part of deployment.
+Include normal behavior heavily; otherwise the anomaly detector has no reliable baseline.
+Label target objects consistently with a documented annotation policy.
+For activities, label temporal start/end boundaries, not just a single frame.
+For cross-camera tracking, record camera IDs and synchronized timestamps.
+Split by scene/session rather than randomly splitting adjacent frames; otherwise train/test leakage can make results look falsely excellent.
+Keep a versioned dataset manifest and annotation schema.
+13. Training / Validation / Test Process
+RAW DATA
+  ↓
+Quality Check
+  ↓
+Annotation
+  ↓
+Train / Validation / Test split by session/camera
+  ↓
+Baseline model
+  ↓
+Training + augmentation
+  ↓
+Validation + threshold calibration
+  ↓
+Held-out test set
+  ↓
+Real-time multi-camera benchmark
+  ↓
+Field/hackathon acceptance test
+14. Evaluation Metrics
+15. Real-Time Performance Design
+Use asynchronous services and bounded queues.
+Use GPU hardware decoding and optimized inference where supported.
+Use FP16/INT8/TensorRT or equivalent optimization after establishing a correct baseline.
+Batch inference only when it improves throughput without unacceptable latency.
+Run cheap models frequently and expensive models conditionally.
+Use region-of-interest processing when a full-frame model is unnecessary.
+Drop stale AI frames instead of building a large backlog.
+Keep the live video path independent from AI inference.
+Use health monitoring for each camera and automatic reconnection.
+16. Recommended System Software
+Operating system: Ubuntu Linux for the dedicated AI server; Windows can remain on the Dell development laptop.
+Python for AI services.
+PyTorch for model development; ONNX/TensorRT where optimization is justified.
+OpenCV / FFmpeg / GStreamer for video processing.
+FastAPI for REST APIs.
+WebSockets for real-time event updates.
+WebRTC-capable media gateway for browser live video.
+Redis or another low-latency message/queue layer if required as the system grows.
+MongoDB or PostgreSQL for events, configuration, camera metadata, and audit records.
+Object storage for selected evidence clips/images.
+Docker for reproducible deployment.
+Prometheus/Grafana or equivalent monitoring for production observability.
+17. Data Model / Event Record
+Event {
+  event_id,
+  camera_id,
+  global_track_id,
+  event_type,
+  timestamp_start,
+  timestamp_end,
+  confidence,
+  risk_level,
+  evidence_clip,
+  evidence_snapshot,
+  model_versions,
+  status,
+  handoff_history
+}
+18. Dashboard Requirements
+Multi-camera live view using WebRTC.
+Automatic focus on active/high-priority events.
+Global track timeline showing camera-to-camera movement.
+Event cards with timestamp, camera, event type, confidence, severity, and evidence.
+Camera health: online/offline, FPS, latency, stream errors.
+AI health: inference FPS, GPU usage, VRAM, queue depth.
+Operator acknowledgement and event status.
+Search/filter by camera, event type, time, severity, and track ID.
+Map/topology view showing camera relationships and current tracked route.
+19. Security, Privacy & Reliability
+Encrypt camera-to-server traffic where supported and protect camera credentials.
+Use role-based access control for operators and administrators.
+Maintain audit logs for event access and configuration changes.
+Define retention limits for evidence and avoid unnecessary storage of raw footage.
+Do not use face recognition or identity claims unless there is a separate lawful and explicitly authorized requirement.
+Treat model output as probabilistic evidence, not absolute truth.
+Provide human review for consequential alerts.
+Design fail-safe behavior: camera loss, GPU overload, network loss, and model failure must be visible to operators.
+20. Hardware Roadmap
+21. Development Order
+Build one-camera RTSP/webcam ingestion.
+Implement smooth live display independently of AI.
+Run object detection and measure real FPS/latency/VRAM.
+Add multi-object tracking.
+Add two and then four simultaneous streams.
+Implement event schema and event engine.
+Implement one strong activity/event use case.
+Build normal-behavior dataset and anomaly baseline.
+Implement cross-camera Re-ID and topology-based handoff.
+Add evidence clips and alerts.
+Optimize GPU inference, decoding, queues, and memory.
+Run held-out accuracy tests and real-time stress tests.
+Deploy on dedicated GPU hardware if the benchmark requires it.
+Build the final operator dashboard.
+22. Acceptance Test for the Hackathon
+A convincing working-product demonstration should show the following end-to-end:
+At least 3–4 live/simulated camera streams running concurrently.
+Smooth browser playback while AI inference is active.
+A person/object detected and tracked through time.
+A configured suspicious/safety event generated from multiple observations rather than one frame.
+The event appears in the dashboard with confidence, severity, timestamp, and evidence.
+The tracked subject moves from Camera 1 to Camera 2 and then to another camera.
+VisionGuard automatically performs the handoff and maintains one global temporary Track ID.
+The operator follows the event timeline rather than manually changing cameras.
+System metrics show that the solution remains within an acceptable latency/FPS budget.
+The team can explain model accuracy, false positives, test data, and system limitations.
+23. Final System Summary
+VisionGuard should be engineered as a distributed real-time perception and event-analysis platform. Cameras provide continuous streams; the media layer keeps those streams smooth; the AI layer extracts visual information; tracking adds temporal continuity; activity and context modules interpret what is happening; anomaly and rule engines identify unusual events; the event engine creates a risk-scored incident; and the cross-camera handoff engine maintains continuity as the subject moves through the camera network.
+The strongest technical differentiator is not simply object detection. It is the combination of multi-camera tracking, temporal event understanding, contextual reasoning, anomaly detection, and automatic camera handoff while maintaining a low-latency live video experience.

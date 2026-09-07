@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VisionGuard ULTRA — Technical Architecture & Execution Blueprint</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+  :root {
+    --primary: #0284c7;
+    --primary-dark: #0369a1;
+    --primary-light: #f0f9ff;
+    --accent: #38bdf8;
+    --bg-main: #ffffff;
+    --card-bg: #ffffff;
+    --text-main: #0f172a;
+    --text-muted: #475569;
+    --border-color: #cbd5e1;
+    --dark-bg: #090d16;
+    --dark-card: #0d1117;
+    --dark-border: #1e293b;
+    --danger-bg: #fef2f2;
+    --danger-border: #fecaca;
+    --danger-text: #991b1b;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @page {
+    size: A4 portrait;
+    margin: 10mm 10mm 10mm 10mm;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--text-main);
+    background: #ffffff;
+    line-height: 1.4;
+    font-size: 9.5px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── PRINT-OPTIMIZED CONTAINER (REMOVED FORCED PAGE BREAKS & EMPTY SPACES) ── */
+  .page-wrapper {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  .page {
+    background: var(--card-bg);
+    padding: 0 0 20px 0;
+    margin-bottom: 0;
+    border: none;
+    box-shadow: none;
+  }
+
+  /* ── MODERN ULTRA HEADER ── */
+  .header {
+    background: linear-gradient(135deg, #020617 0%, #0f172a 50%, #1e293b 100%);
+    color: white;
+    padding: 20px 24px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    border: 1px solid #334155;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+  }
+  .header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+  .brand-title {
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    text-transform: uppercase;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .brand-title span.highlight { color: var(--accent); }
+  .repo-badge {
+    font-size: 9.5px;
+    font-weight: 600;
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    padding: 4px 10px;
+    border-radius: 6px;
+    color: #7dd3fc;
+    font-family: 'JetBrains Mono', monospace;
+    text-decoration: none;
+  }
+  .subtitle {
+    font-size: 11px;
+    color: #94a3b8;
+    font-weight: 400;
+    margin-bottom: 12px;
+  }
+  .header-tags {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .tag {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 9px;
+    color: #e2e8f0;
+    font-weight: 600;
+  }
+  .tag.alert { background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5; }
+  .tag.success { background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.4); color: #6ee7b7; }
+
+  /* ── GITHUB BOX ── */
+  .github-container {
+    background: var(--dark-card);
+    border: 1px solid var(--dark-border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    color: #c9d1d9;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .github-container a { color: #58a6ff; text-decoration: none; font-weight: 600; }
+
+  /* ── NOTIFICATION BANNERS ── */
+  .alert-banner {
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    border-left: 4px solid #dc2626;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+  }
+  .alert-banner h4 {
+    font-size: 9.5px;
+    font-weight: 800;
+    color: var(--danger-text);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
+  .alert-banner p { font-size: 9px; color: #7f1d1d; font-weight: 600; }
+
+  .info-card {
+    background: var(--primary-light);
+    border: 1px solid #bae6fd;
+    border-left: 4px solid var(--primary);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+  }
+  .info-card h4 { font-size: 9.5px; font-weight: 800; color: var(--primary-dark); text-transform: uppercase; margin-bottom: 2px; }
+  .info-card p { font-size: 9px; color: #0c4a6e; }
+
+  /* ── SECTION TITLES ── */
+  .section-header {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text-main);
+    margin: 16px 0 10px 0;
+    padding-bottom: 4px;
+    border-bottom: 2px solid var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  /* ── TABLES (NATURAL FLOW WITHOUT AWKWARD PAGE BREAKS) ── */
+  .table-responsive {
+    width: 100%;
+    margin-bottom: 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+  }
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9px;
+    background: #ffffff;
+    text-align: left;
+  }
+  .data-table th {
+    background: #0f172a;
+    color: #ffffff;
+    padding: 7px 10px;
+    font-weight: 700;
+    font-size: 8.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border-bottom: 1px solid #1e293b;
+  }
+  .data-table td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: top;
+    color: var(--text-main);
+  }
+  .data-table tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .data-table tr:nth-child(even) { background: #f8fafc; }
+
+  /* ── BADGES ── */
+  .role-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 8px;
+    font-weight: 800;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+  }
+  .role-rafay { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+  .role-moiz { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+  .role-areeba { background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }
+  .role-aqib { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+  .role-all { background: #0f172a; color: #ffffff; }
+
+  /* ── CODE BLOCKS ── */
+  .code-container {
+    background: var(--dark-bg);
+    color: #38bdf8;
+    border: 1px solid var(--dark-border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin: 8px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8.5px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-all;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .code-container .comment { color: #64748b; font-style: italic; }
+  .code-container .keyword { color: #f472b6; font-weight: 600; }
+  .code-container .string { color: #a3e635; }
+  .code-container .function { color: #fbbf24; }
+
+  /* ── CARDS & LAYOUT ── */
+  .card {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 10px;
+    background: #ffffff;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .card h4 {
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--text-main);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .step-idx {
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+    font-weight: 800;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .day-card-header {
+    background: linear-gradient(90deg, #0f172a, #1e293b);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    margin: 10px 0 6px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+  .day-card-header h3 { font-size: 10.5px; font-weight: 800; }
+  .day-pill {
+    font-size: 8px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 800;
+    text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .day-pill.start { background: var(--primary); color: white; }
+  .day-pill.proto { background: #f59e0b; color: #0f172a; }
+  .day-pill.final { background: #10b981; color: white; }
+
+  /* ── CALENDAR GRID STYLING ── */
+  .cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+    margin: 10px 0;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .cal-day-box {
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px;
+    min-height: 130px;
+    display: flex;
+    flex-direction: column;
+  }
+  .cal-day-box.header-day {
+    background: #0f172a;
+    color: #ffffff;
+    min-height: auto;
+    text-align: center;
+    font-weight: 800;
+    font-size: 8.5px;
+    text-transform: uppercase;
+    padding: 5px;
+  }
+  .cal-day-box.deadline { border: 2px solid #ef4444; background: #fef2f2; }
+  .cal-day-box.milestone { border: 2px solid #10b981; background: #f0fdf4; }
+  .cal-date { font-weight: 900; font-size: 9.5px; color: var(--primary-dark); margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .cal-event-tag { font-size: 7px; padding: 2px 4px; border-radius: 3px; font-weight: 800; text-transform: uppercase; margin-bottom: 4px; display: inline-block; }
+  .cal-task-list { list-style: none; font-size: 7.5px; color: var(--text-main); }
+  .cal-task-list li { margin-bottom: 3px; padding-left: 8px; position: relative; line-height: 1.3; }
+  .cal-task-list li::before { content: "•"; position: absolute; left: 0; color: var(--primary); font-weight: bold; }
+
+  .member-schedule-card {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 10px;
+    background: #ffffff;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .member-schedule-card h4 { font-size: 10px; font-weight: 800; color: #0f172a; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; }
+
+  .footer {
+    text-align: center;
+    padding: 12px;
+    color: var(--text-muted);
+    font-size: 8px;
+    margin-top: 14px;
+    border-top: 1px solid var(--border-color);
+  }
+
+  /* ── PRINT MEDIA RULES (PREVENT BLANK PAGES & REMOVE HARD PAGE-BREAKS) ── */
+  @media print {
+    body { background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page-wrapper { padding: 0; width: 100%; }
+    .page {
+      padding: 0;
+      margin-bottom: 0;
+      border: none;
+      box-shadow: none;
+      page-break-after: auto !important;
+      break-after: auto !important;
+    }
+    .header, .alert-banner, .info-card, .card, .table-responsive, .code-container, .cal-grid, .member-schedule-card {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+    .data-table tr {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+    .day-card-header, .section-header {
+      page-break-after: avoid !important;
+      break-after: avoid !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="page-wrapper">
+
+<!-- ═══════════════════════ SECTION 1: OVERVIEW & TEAM ASSIGNMENTS ═══════════════════════ -->
+<div class="page">
+
+  <div class="header">
+    <div class="header-top">
+      <div class="brand-title">VISION<span class="highlight">GUARD</span> ULTRA</div>
+      <div class="repo-badge">https://github.com/AbdulRafay70/Alibaba-AI-hackathon.git</div>
+    </div>
+    <div class="subtitle">Pakistan's AI City Protection System — Technical Architecture, Code Execution & Master Team Blueprint</div>
+    <div class="header-tags">
+      <div class="tag">Timeline: Aug 30 – Sept 6, 2026</div>
+      <div class="tag alert">Prototype Deadline: Sept 1</div>
+      <div class="tag success">Final Production Submission: Sept 6</div>
+      <div class="tag">Team: Rafay (Lead), Moiz, Areeba, Aqib</div>
+    </div>
+  </div>
+
+  <div class="github-container">
+    <div><strong>Official GitHub Repository:</strong> <a href="https://github.com/AbdulRafay70/Alibaba-AI-hackathon.git" target="_blank">https://github.com/AbdulRafay70/Alibaba-AI-hackathon.git</a></div>
+    <div>Mandatory Workflow: Git Pull before work | Git Push before sleep</div>
+  </div>
+
+  <div class="alert-banner">
+    <h4>Critical Help Directive & Team Protocol</h4>
+    <p>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</p>
+  </div>
+
+  <div class="section-header"><span>Mission Overview & Core Performance Targets</span></div>
+  <div class="info-card">
+    <h4>Core System Benchmarks</h4>
+    <p>
+      • <strong>FPS Performance:</strong> Target 25-30 FPS real-time execution across webcam streams, MP4 video files, and network RTSP IP cameras.<br>
+      • <strong>Accuracy Target:</strong> Under 3% false alarm rate on standard city surveillance footage.<br>
+      • <strong>Multi-Modal Engine:</strong> Fusing PyTorch YOLOv8s + YOLO-Pose + Fine-tuned Custom Neural Classifiers + YAMNet Acoustic Intelligence.
+    </p>
+  </div>
+
+  <!-- TEAM ROLES -->
+  <div class="section-header"><span>Team Member Role Matrix</span></div>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 15%">Member</th>
+          <th style="width: 25%">Role</th>
+          <th style="width: 60%">Primary Responsibilities</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="role-badge role-rafay">RAFAY (Lead)</span></td>
+          <td>System Architecture & Integration</td>
+          <td>Async frame buffering, FP16 GPU pipeline, threshold calibration, multi-model fusion, RTSP IP camera engine, final code verification.</td>
+        </tr>
+        <tr>
+          <td><span class="role-badge role-moiz">MOIZ</span></td>
+          <td>ML & Neural Network Training</td>
+          <td>Train Violence Classifier, Fire v2 Model, and Weapon Detection Model on Google Colab GPU. Download 20 test videos & assist Aqib on UI.</td>
+        </tr>
+        <tr>
+          <td><span class="role-badge role-areeba">AREEBA</span></td>
+          <td>Data Science & Model Evaluation</td>
+          <td>Dataset quality control, class balancing, Albumentations data augmentation pipeline, Confusion Matrices, mAP evaluation reports.</td>
+        </tr>
+        <tr>
+          <td><span class="role-badge role-aqib">AQIB</span></td>
+          <td>UI / UX & Documentation</td>
+          <td>Command Center Dark Glassmorphism UI, Chart.js analytics, README.md, Mermaid diagrams, OBS backup demo video, Google Slides deck.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ROADMAP COMPARISON -->
+  <div class="section-header"><span>Evolution Roadmap: Prototype ➔ MVP ➔ Final Production</span></div>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 20%">Capability</th>
+          <th style="width: 26%">PROTOTYPE (Sept 1)</th>
+          <th style="width: 27%">MVP (Sept 4)</th>
+          <th style="width: 27%">FINAL PRODUCTION (Sept 6)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Video Inputs & FPS</strong></td>
+          <td>Webcam + 20 MP4 Video Files (15-20 FPS)</td>
+          <td>Webcam + Video Files + 2 RTSP Cameras (25+ FPS)</td>
+          <td><strong>Zero-Lag Engine:</strong> Webcam + Videos + Multi-RTSP (30 FPS Smooth)</td>
+        </tr>
+        <tr>
+          <td><strong>AI Models</strong></td>
+          <td>YOLOv8s + YOLOv8s-Pose</td>
+          <td>Trained Violence Classifier + Fire v2 Model</td>
+          <td><strong>Triple Neural Suite:</strong> Violence + Fire v2 + Weapon Model</td>
+        </tr>
+        <tr>
+          <td><strong>Precision & Alerts</strong></td>
+          <td>Rule-based heuristics (&lt;20% FP)</td>
+          <td>Hybrid Neural Verification (&lt;10% FP)</td>
+          <td><strong>Audio-Video Fusion Engine (&lt;3% FP)</strong></td>
+        </tr>
+        <tr>
+          <td><strong>UI & Dashboard</strong></td>
+          <td>Basic FastAPI MJPEG Streamer</td>
+          <td>Dark Glassmorphism UI + Event Feed</td>
+          <td><strong>Command Center UI + Chart.js + Evidence Modal</strong></td>
+        </tr>
+        <tr>
+          <td><strong>Voice & LLM</strong></td>
+          <td>Basic Gemini AI Narrator Script</td>
+          <td>Voice Commands connected to Dashboard UI</td>
+          <td><strong>Full Voice Assistant + Urdu/English Narrator</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════ SECTION 2: DEEP DIVE INTO AI/ML & VOICE COMMAND PIPELINE ═══════════════════════ -->
+<div class="page">
+
+  <div class="alert-banner">
+    <h4>Stuck on AI/ML Code or Pipeline?</h4>
+    <p>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</p>
+  </div>
+
+  <div class="section-header"><span>Deep Dive: AI / ML Pipeline & Frame Ingestion Architecture</span></div>
+
+  <div class="card">
+    <h4><span class="step-idx">1</span> 1. Real-Time Frame Ingestion & Threading Strategy (Rafay)</h4>
+    <p>To prevent video lag, OpenCV frame capture is decoupled from GPU inference using background daemon threads:</p>
+    <p>• <strong>Daemon Threading:</strong> <code>prototype/camera/webcam.py</code> continuously streams raw frames into a 2-slot circular buffer.</p>
+    <p>• <strong>Adaptive Dropping:</strong> If GPU inference takes 30ms, stale frames in buffer are automatically dropped, ensuring the model always receives the latest frame.</p>
+  </div>
+
+  <div class="card">
+    <h4><span class="step-idx">2</span> 2. PyTorch GPU Multi-Model Pipeline (Moiz & Rafay)</h4>
+    <p>Each video frame passes through a 3-layer neural network pipeline inside <code>prototype/ai/pipeline.py</code>:</p>
+    <p>• <strong>Layer 1 (Object Detection):</strong> YOLOv8s (COCO 80 classes) detects persons, cars, bikes, backpacks, laptops.</p>
+    <p>• <strong>Layer 2 (Multi-Object Tracking):</strong> ByteTrack assigns persistent Track IDs (e.g. <code>VG-001</code>, <code>VG-002</code>) across frames.</p>
+    <p>• <strong>Layer 3 (Pose & Classifier Verification):</strong> YOLOv8-Pose extracts 17 body keypoints. If aggressive keypoint angles are detected, cropped person bounding boxes are passed to custom <code>violence_classifier_best.pt</code> for instant verification.</p>
+  </div>
+
+  <div class="section-header"><span>Voice Command Engine & AI Narrator Execution Flow</span></div>
+
+  <div class="card">
+    <h4><span class="step-idx">1</span> Step 1: Speech Capture (Web Speech API)</h4>
+    <p>The operator speaks into the Chrome browser interface. The browser's native Web Speech API converts spoken audio to text (e.g. <em>"Open Saddar street camera and tell me what happened"</em>).</p>
+  </div>
+
+  <div class="card">
+    <h4><span class="step-idx">2</span> Step 2: Gemini Intent Parsing (`prototype/voice/interpreter.py`)</h4>
+    <p>The speech transcript is sent to Google Gemini 2.0 Flash API via FastAPI endpoint. Gemini parses natural language into structured JSON action commands:</p>
+    <div class="code-container">
+{
+  "action": "switch_camera",
+  "location": "saddar",
+  "camera_id": "CAM-042",
+  "generate_report": true
+}
+    </div>
+  </div>
+
+  <div class="card">
+    <h4><span class="step-idx">3</span> Step 3: Action Execution & WebSocket Dashboard Update</h4>
+    <p>FastAPI backend (`prototype/voice/executor.py`) receives JSON commands, updates live feeds on `dashboard.html` via WebSockets, and fetches active logs for CAM-042.</p>
+  </div>
+
+  <div class="card">
+    <h4><span class="step-idx">4</span> Step 4: Spoken Bilingual Report Generation (`prototype/voice/narrator.py`)</h4>
+    <p>Gemini LLM generates a concise emergency summary in both English and Urdu script. Browser Text-to-Speech (TTS) speaks the report back to the operator.</p>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════ SECTION 3: MULTI-DOMAIN DATASETS & DATA SCIENCE PIPELINE ═══════════════════════ -->
+<div class="page">
+
+  <div class="alert-banner">
+    <h4>Stuck on Datasets or Colab Training?</h4>
+    <p>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</p>
+  </div>
+
+  <div class="section-header"><span>Multi-Domain Dataset Strategy (15 Specialized Domains)</span></div>
+
+  <div class="info-card">
+    <h4>Domain Acquisition Breakdown</h4>
+    <p>To achieve 95%+ precision across all 12 supported event types, we download 2-3 specialized datasets per domain from Roboflow Universe, Kaggle, and GitHub research repositories.</p>
+  </div>
+
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 5%">#</th>
+          <th style="width: 20%">Domain</th>
+          <th style="width: 45%">Roboflow / Kaggle / GitHub Datasets</th>
+          <th style="width: 15%">Total Images</th>
+          <th style="width: 15%">Responsible</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>Fighting / Violence</td><td>RWF-2000 + Real Life Violence + CCTV Violence Dataset</td><td>12,000+</td><td>Moiz & Areeba</td></tr>
+        <tr><td>2</td><td>Fire & Smoke</td><td>D-Fire Dataset + Fire & Smoke Roboflow + Wildfire Drone</td><td>25,000+</td><td>Moiz & Areeba</td></tr>
+        <tr><td>3</td><td>Weapon / Firearms</td><td>Weapon Detection CCTV + Knife Detection + Pistol Roboflow</td><td>8,000+</td><td>Moiz & Areeba</td></tr>
+        <tr><td>4</td><td>Kidnapping / Forced Move</td><td>Human Struggle Poses + Forced Abduction CCTV Clips</td><td>4,500+</td><td>Moiz & Areeba</td></tr>
+        <tr><td>5</td><td>Car Accident</td><td>Intersection Collision Dashcam + Vehicle Crash CCTV</td><td>6,000+</td><td>Moiz & Areeba</td></tr>
+        <tr><td>6</td><td>Bike Accident</td><td>Motorcycle Crash CCTV + Fall Detection Dataset</td><td>5,000+</td><td>Moiz & Areeba</td></tr>
+        <tr><td>7</td><td>Crowd Density</td><td>ShanghaiTech Crowd Counting + Crowd Stampede Dataset</td><td>15,000+</td><td>Moiz & Areeba</td></tr>
+        <tr><td>8</td><td>Loitering</td><td>Security Camera Loitering + Station Dwell Time Dataset</td><td>3,500+</td><td>Moiz & Areeba</td></tr>
+        <tr><td>9</td><td>Abandoned Baggage</td><td>PETS2006 Abandoned Luggage + Airport Security Dataset</td><td>4,000+</td><td>Moiz & Areeba</td></tr>
+        <tr><td>10</td><td>Vehicle Obstruction</td><td>Highway Stopped Vehicle + Traffic Obstruction Dataset</td><td>5,000+</td><td>Moiz & Areeba</td></tr>
+        <tr><td>11</td><td>Gunshots (Audio)</td><td>UrbanSound8K (Gunshot class) + AudioSet Firearms</td><td>3,000 wavs</td><td>Rafay & Aqib</td></tr>
+        <tr><td>12</td><td>Explosions (Audio)</td><td>ESC-50 Explosions + Military Blast Sound Dataset</td><td>2,000 wavs</td><td>Rafay & Aqib</td></tr>
+        <tr><td>13</td><td>Screaming (Audio)</td><td>AudioSet Distress Screams + Human Shouting Clips</td><td>2,500 wavs</td><td>Rafay & Aqib</td></tr>
+        <tr><td>14</td><td>Crashes (Audio)</td><td>Vehicle Impact Sounds + Metal Glass Crash Dataset</td><td>2,000 wavs</td><td>Rafay & Aqib</td></tr>
+        <tr><td>15</td><td>Normal Street (Negatives)</td><td>Busy City Sidewalks + Traffic Intersections + Market Daytime</td><td>10,000+</td><td>Moiz & Areeba</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- DATA SCIENCE CLEANING & PREPROCESSING -->
+  <div class="section-header"><span>Data Science Pipeline: Code Implementation (Areeba & Moiz)</span></div>
+
+  <div class="card">
+    <h4><span class="step-idx">1</span> Step 1 Code: Complete Data Cleaning, Integrity Check & Annotation Audit Script</h4>
+    <p>Required Tools: <code>opencv-python</code>, <code>hashlib</code>, <code>os</code>. Purges unreadable/0-byte JPEGs, eliminates duplicate images via MD5 hashing, and audits bounding box labels.</p>
+    <div class="code-container">
+<span class="comment"># Complete Python Code for Step 1: Data Cleaning & Bounding Box Audit</span>
+<span class="keyword">import</span> os, cv2, hashlib
+
+<span class="keyword">def</span> <span class="function">clean_dataset_and_fix_labels</span>(dataset_dir):
+    seen_hashes = set()
+    removed_corrupt = 0
+    removed_duplicates = 0
+    fixed_labels = 0
+
+    <span class="keyword">for</span> root, dirs, files <span class="keyword">in</span> os.walk(dataset_dir):
+        <span class="keyword">for</span> file <span class="keyword">in</span> files:
+            file_path = os.path.join(root, file)
+            
+            <span class="comment"># 1. Image File Integrity Check (OpenCV)</span>
+            <span class="keyword">if</span> file.lower().endswith((<span class="string">'.jpg'</span>, <span class="string">'.jpeg'</span>, <span class="string">'.png'</span>)):
+                img = cv2.imread(file_path)
+                <span class="keyword">if</span> img <span class="keyword">is</span> <span class="keyword">None</span> <span class="keyword">or</span> img.size == 0:
+                    os.remove(file_path)
+                    removed_corrupt += 1
+                    <span class="keyword">continue</span>
+                
+                <span class="comment"># 2. Duplicate Image Hash Removal (Hashlib MD5)</span>
+                img_hash = hashlib.md5(img.tobytes()).hexdigest()
+                <span class="keyword">if</span> img_hash <span class="keyword">in</span> seen_hashes:
+                    os.remove(file_path)
+                    removed_duplicates += 1
+                    <span class="keyword">continue</span>
+                <span class="keyword">else</span>:
+                    seen_hashes.add(img_hash)
+
+            <span class="comment"># 3. YOLO Label Annotation Audit (Bounding Box 0-1 Normalization Audit)</span>
+            <span class="keyword">elif</span> file.endswith(<span class="string">'.txt'</span>) <span class="keyword">and</span> file != <span class="string">'classes.txt'</span>:
+                valid_lines = []
+                <span class="keyword">with</span> open(file_path, <span class="string">'r'</span>) <span class="keyword">as</span> f:
+                    lines = f.readlines()
+                <span class="keyword">for</span> line <span class="keyword">in</span> lines:
+                    parts = line.strip().split()
+                    <span class="keyword">if</span> len(parts) == 5:
+                        cls, x, y, w, h = map(float, parts)
+                        <span class="keyword">if</span> 0 &lt;= x &lt;= 1 <span class="keyword">and</span> 0 &lt;= y &lt;= 1 <span class="keyword">and</span> 0 &lt;= w &lt;= 1 <span class="keyword">and</span> 0 &lt;= h &lt;= 1:
+                            valid_lines.append(line)
+                <span class="keyword">with</span> open(file_path, <span class="string">'w'</span>) <span class="keyword">as</span> f:
+                    f.writelines(valid_lines)
+                fixed_labels += 1
+
+    <span class="function">print</span>(f<span class="string">"Step 1 Complete: Removed {removed_corrupt} corrupt images, {removed_duplicates} duplicates, audited {fixed_labels} labels."</span>)
+    </div>
+  </div>
+
+  <div class="card">
+    <h4><span class="step-idx">2</span> Step 2 Code: Class Balancing & Albumentations Augmentation Script</h4>
+    <p>Required Tools: <code>albumentations</code>. Balances minority classes and injects weather (rain, fog, shadow) variations for real-world reliability.</p>
+    <div class="code-container">
+<span class="comment"># Complete Python Code for Step 2: Class Balancing & Synthetic Weather Augmentation</span>
+<span class="keyword">import</span> albumentations <span class="keyword">as</span> A
+<span class="keyword">import</span> cv2, os
+
+transform_pipeline = A.Compose([
+    A.HorizontalFlip(p=0.5),
+    A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.4),
+    A.RandomRain(brightness_coefficient=0.9, drop_density=0.1, p=0.2),
+    A.RandomFog(fog_coef_lower=0.1, fog_coef_upper=0.3, p=0.2),
+    A.RandomShadow(num_shadows_lower=1, num_shadows_upper=3, p=0.25),
+    A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=15, p=0.3)
+])
+
+<span class="keyword">def</span> <span class="function">balance_and_augment_class</span>(input_dir, output_dir, target_multiplier=3):
+    os.makedirs(output_dir, exist_ok=<span class="keyword">True</span>)
+    <span class="keyword">for</span> img_name <span class="keyword">in</span> os.listdir(input_dir):
+        img_path = os.path.join(input_dir, img_name)
+        image = cv2.imread(img_path)
+        <span class="keyword">if</span> image <span class="keyword">is</span> <span class="keyword">None</span>: <span class="keyword">continue</span>
+        
+        cv2.imwrite(os.path.join(output_dir, img_name), image)
+        
+        <span class="keyword">for</span> i <span class="keyword">in</span> range(target_multiplier):
+            augmented = transform_pipeline(image=image)[<span class="string">'image'</span>]
+            aug_name = f<span class="string">"aug_{i}_{img_name}"</span>
+            cv2.imwrite(os.path.join(output_dir, aug_name), augmented)
+            
+    <span class="function">print</span>(f<span class="string">"Step 2 Complete: Class augmented successfully! Saved to {output_dir}"</span>)
+    </div>
+  </div>
+
+  <div class="card">
+    <h4><span class="step-idx">3</span> Step 3 Code: Google Drive Mount & Exact YOLO Training Commands (Moiz)</h4>
+    <p>Required Platform: Google Colab T4 GPU, Google Drive, Ultralytics YOLOv8. Unzips dataset to NVMe, runs model training, and exports weights.</p>
+    <div class="code-container">
+<span class="comment"># CELL 1: Mount Google Drive & Extract Cleaned Dataset (Moiz)</span>
+<span class="keyword">from</span> google.colab <span class="keyword">import</span> drive
+drive.mount(<span class="string">'/content/drive'</span>)
+
+!<span class="keyword">unzip</span> -q /content/drive/MyDrive/cleaned_dataset.zip -d /content/dataset/
+<span class="function">print</span>(<span class="string">"Cleaned dataset extracted to Colab local storage!"</span>)
+
+<span class="comment"># CELL 2: OFFICIAL ULTRALYTICS YOLO TRAINING COMMAND</span>
+<span class="keyword">from</span> ultralytics <span class="keyword">import</span> YOLO
+
+model = YOLO(<span class="string">"yolov8s-cls.pt"</span>)
+results = model.train(
+    data=<span class="string">"/content/dataset/"</span>,
+    epochs=50,
+    imgsz=224,
+    batch=32,
+    device=0,
+    name=<span class="string">"visionguard_custom_model"</span>,
+    project=<span class="string">"/content/runs"</span>
+)
+
+<span class="comment"># Terminal CLI Command Alternative:</span>
+!yolo mode=train model=yolov8s-cls.pt data=/content/dataset/ epochs=50 imgsz=224 batch=32 device=0 name=visionguard_custom_model
+
+<span class="comment"># CELL 3: Export Trained Model Weights to Drive</span>
+!cp /content/runs/visionguard_custom_model/weights/best.pt /content/drive/MyDrive/violence_classifier_best.pt
+<span class="function">print</span>(<span class="string">"SUCCESS! Trained model weights saved to Google Drive as violence_classifier_best.pt!"</span>)
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════ SECTION 4: DETAILED EXPLICIT DAY-BY-DAY TASK MATRIX ═══════════════════════ -->
+<div class="page">
+
+  <div class="alert-banner">
+    <h4>Stuck on Daily Tasks?</h4>
+    <p>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</p>
+  </div>
+
+  <div class="section-header"><span>Comprehensive Day-by-Day Task Execution Matrix (Aug 30 – Sept 6)</span></div>
+
+  <!-- DAY 1 -->
+  <div class="day-card-header">
+    <h3>DAY 1 — Saturday, Aug 30 (TODAY) — Dataset Downloads & GPU Pipeline Setup</h3>
+    <span class="day-pill start">Sprint Start</span>
+  </div>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 10%">WHO</th>
+          <th style="width: 44%">DETAILED STEP-BY-STEP TASK DESCRIPTION</th>
+          <th style="width: 23%">DELIVERABLE</th>
+          <th style="width: 23%">TOOLS / METHOD</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="role-badge role-moiz">MOIZ</span></td><td>• Download 10 initial test videos (fire, fight, accident, crowd, robbery + 5 normal street clips).<br>• Create Roboflow Universe account & search <code>real life violence detection</code> dataset.<br>• Export dataset snippet and start YOLOv8s-cls training on Google Colab T4 GPU (50 epochs).<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td>10 <code>.mp4</code> files + Colab run active</td><td>Pexels / Roboflow / Colab GPU</td></tr>
+        <tr><td><span class="role-badge role-areeba">AREEBA</span></td><td>• Download D-Fire Dataset (21,000+ images) from Roboflow Universe for Fire/Smoke v2 model.<br>• Write Python file integrity scanner to auto-purge 0-byte corrupted image JPEGs.<br>• Build Albumentations notebook to generate rain, fog, and shadow synthetic variants.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td>D-Fire clean dataset + Augmentation script</td><td>Roboflow / OpenCV / Albumentations</td></tr>
+        <tr><td><span class="role-badge role-rafay">RAFAY</span></td><td>• Run baseline test suite on existing video files using <code>python run.py --test-all</code>.<br>• Implement Async Threaded Frame Buffering inside <code>prototype/camera/</code> to prevent stream lag.<br>• Enable FP16 half-precision inference inside PyTorch pipeline (<code>prototype/ai/pipeline.py</code>).</td><td>Baseline metrics + Zero-lag pipeline</td><td>PyTorch CUDA / OpenCV Threading</td></tr>
+        <tr><td><span class="role-badge role-aqib">AQIB</span></td><td>• Initiate Dashboard UI overhaul in <code>prototype/web/templates/dashboard.html</code>.<br>• Apply dark theme color palette with frosted glassmorphism CSS card containers.<br>• Implement responsive CSS grid layout for live camera feed and event logs.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td>Dark Glassmorphic UI Dashboard layout</td><td>HTML5 / Vanilla CSS3 / Flexbox</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- DAY 2 -->
+  <div class="day-card-header">
+    <h3>DAY 2 — Sunday, Aug 31 — Model Weights Export & Prototype Stabilization</h3>
+    <span class="day-pill start">Prototype Prep</span>
+  </div>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 10%">WHO</th>
+          <th style="width: 44%">DETAILED STEP-BY-STEP TASK DESCRIPTION</th>
+          <th style="width: 23%">DELIVERABLE</th>
+          <th style="width: 23%">TOOLS / METHOD</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="role-badge role-moiz">MOIZ</span></td><td>• Export trained <code>violence_classifier_best.pt</code> from Colab to Google Drive & share link.<br>• Download remaining 10 test videos (Total 20 test videos saved in <code>prototype/test_videos/</code>).<br>• Launch Fire/Smoke v2 model training on Google Colab (D-Fire dataset, 80 epochs).<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td><code>violence_classifier_best.pt</code> + 20 videos</td><td>Colab GPU / Drive / Pexels</td></tr>
+        <tr><td><span class="role-badge role-areeba">AREEBA</span></td><td>• Run <code>model.val()</code> on Colab to plot Confusion Matrix & Precision-Recall curves for Violence Classifier.<br>• Search & download Weapon Detection Dataset (Knives, Pistols) from Roboflow Universe.<br>• Perform class balancing on weapon dataset (ensure equal knife vs gun counts).<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td>Evaluation plots + Weapon dataset</td><td>Colab <code>model.val()</code> / Roboflow</td></tr>
+        <tr><td><span class="role-badge role-rafay">RAFAY</span></td><td>• Load <code>violence_classifier_best.pt</code> into PyTorch pipeline for neural fight verification.<br>• Calibrate detection thresholds inside <code>prototype/config.py</code> (adjusting velocity & proximity limits).<br>• Ensure normal test videos produce 0 false positive alerts during testing.</td><td>Neural fight detector + Calibrated <code>config.py</code></td><td>PyTorch / <code>prototype/config.py</code></td></tr>
+        <tr><td><span class="role-badge role-aqib">AQIB</span></td><td>• Complete Dashboard UI: Add glowing live feed border, scrolling alert log, and status bar.<br>• Write project <code>README.md</code> featuring system introduction & setup instructions.<br>• Create Mermaid.js architecture diagram illustrating video stream to WebSocket flow.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td>Styled UI + <code>README.md</code> + Mermaid diagram</td><td>HTML/CSS/JS + Markdown + Mermaid</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- DAY 3 -->
+  <div class="day-card-header">
+    <h3>DAY 3 — Monday, Sept 1 — PROTOTYPE SUBMISSION DEADLINE</h3>
+    <span class="day-pill proto">Submit Prototype</span>
+  </div>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 10%">WHO</th>
+          <th style="width: 44%">DETAILED STEP-BY-STEP TASK DESCRIPTION</th>
+          <th style="width: 23%">DELIVERABLE</th>
+          <th style="width: 23%">TOOLS / METHOD</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="role-badge role-moiz">MOIZ</span></td><td>• Export <code>fire_smoke_best_v2.pt</code> weights from Colab to Drive and share with Rafay.<br>• Launch Weapon Detection model training on Google Colab GPU (YOLOv8s, 60 epochs).<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td><code>fire_smoke_best_v2.pt</code> weights file</td><td>Colab GPU / Google Drive</td></tr>
+        <tr><td><span class="role-badge role-areeba">AREEBA</span></td><td>• Validate Fire v2 model metrics (mAP50 score) & generate comparison report against v1 color model.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td>Fire Model Evaluation Report</td><td>Colab <code>model.val()</code> / Markdown</td></tr>
+        <tr><td><span class="role-badge role-rafay">RAFAY</span></td><td>• Execute full automated test suite on all 20 test clips using <code>python run.py --test-all</code>.<br>• Fix edge-case bugs in detector modules and confirm zero false alarms on normal clips.</td><td>Baseline test log (20 clips passed)</td><td><code>python run.py --test-all</code></td></tr>
+        <tr><td><span class="role-badge role-aqib">AQIB</span></td><td>• Final UI verification: Test WebSocket real-time event alert pushes and evidence snapshot gallery.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td>Verified Prototype Dashboard UI</td><td>FastAPI WebSockets / Chrome</td></tr>
+        <tr><td><span class="role-badge role-all">ALL</span></td><td>• <strong>SUBMIT PROTOTYPE VERSION (BY END OF DAY):</strong> Push final clean code to GitHub main branch.</td><td><strong>Prototype Submitted</strong></td><td>GitHub Push + Submission Form</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- DAY 4 -->
+  <div class="day-card-header">
+    <h3>DAY 4 — Tuesday, Sept 2 — MVP Multi-Model Integration & Audio Pipeline</h3>
+    <span class="day-pill start">MVP Sprint</span>
+  </div>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 10%">WHO</th>
+          <th style="width: 44%">DETAILED STEP-BY-STEP TASK DESCRIPTION</th>
+          <th style="width: 23%">DELIVERABLE</th>
+          <th style="width: 23%">TOOLS / METHOD</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="role-badge role-rafay">RAFAY</span></td><td>• Load Fire v2 and Weapon detection models into PyTorch CUDA pipeline (<code>pipeline.py</code>).<br>• Implement YAMNet Audio Classification inside <code>prototype/ai/audio.py</code> for gunshot/crash fusion.<br>• Configure RTSP IP camera stream handlers with auto-reconnect threads in <code>config.py</code>.</td><td>Multi-Model AI Pipeline + Audio Fusion + RTSP Engine</td><td>PyTorch CUDA / YAMNet / RTSP PoE</td></tr>
+        <tr><td><span class="role-badge role-moiz">MOIZ</span></td><td>• Download Weapon model weights <code>weapon_detection_best.pt</code> from Drive and share with Rafay.<br>• Run batch test suite on all 20 videos with updated custom models & record metrics.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td><code>weapon_detection_best.pt</code> + Accuracy Log</td><td>Google Drive / <code>python run.py --test-all</code></td></tr>
+        <tr><td><span class="role-badge role-areeba">AREEBA</span></td><td>• Compile Model Metrics Evaluation Report (Confusion Matrices & mAP stats for all 3 models).<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td>Comprehensive ML Evaluation Report</td><td>Google Doc / Colab Notebook</td></tr>
+        <tr><td><span class="role-badge role-aqib">AQIB</span></td><td>• Integrate Chart.js Analytics into Dashboard UI (Event pie chart & live risk level gauge).<br>• Draft <code>DEMO_SCRIPT.md</code> detailing step-by-step presentation narrative for jury presentation.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td>Analytics Dashboard View + <code>DEMO_SCRIPT.md</code></td><td>Chart.js / WebSocket Listener / Markdown</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- DAY 5 -->
+  <div class="day-card-header">
+    <h3>DAY 5 — Wednesday, Sept 3 — Voice Controls & AI Narrator Integration</h3>
+    <span class="day-pill start">MVP Polish</span>
+  </div>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 10%">WHO</th>
+          <th style="width: 44%">DETAILED STEP-BY-STEP TASK DESCRIPTION</th>
+          <th style="width: 23%">DELIVERABLE</th>
+          <th style="width: 23%">TOOLS / METHOD</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="role-badge role-rafay">RAFAY</span></td><td>• Connect Web Speech API & Gemini Voice Command Interpreter (`voice/interpreter.py`) to WebSocket.<br>• Verify Urdu & English Gemini AI Narrator output generation (`voice/narrator.py`) for active alerts.</td><td>Voice-Controlled Dashboard + Bilingual Narrator</td><td>Web Speech API / Gemini API / WebSocket</td></tr>
+        <tr><td><span class="role-badge role-moiz">MOIZ</span></td><td>• Assist Aqib in fine-tuning Frontend Dashboard CSS glassmorphic responsive layout.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td>Polished Responsive Dashboard UI</td><td>HTML5 / CSS3 Flexbox</td></tr>
+        <tr><td><span class="role-badge role-areeba">AREEBA</span></td><td>• Conduct Error Analysis on remaining false positives and recommend threshold parameters.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td>Error Analysis Document</td><td>Data Analysis on test logs</td></tr>
+        <tr><td><span class="role-badge role-aqib">AQIB</span></td><td>• Build Evidence Snapshot Viewer Modal in Dashboard UI for instant dispatcher inspection.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td>Evidence Modal UI component</td><td>JavaScript / HTML5 Modal</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- DAY 6 TO 8 -->
+  <div class="day-card-header">
+    <h3>DAYS 6 TO 8 — Sept 4 to Sept 6 — Real-World Testing & FINAL PRODUCTION SUBMISSION</h3>
+    <span class="day-pill final">Final Submission</span>
+  </div>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 10%">WHO</th>
+          <th style="width: 44%">DETAILED STEP-BY-STEP TASK DESCRIPTION</th>
+          <th style="width: 23%">DELIVERABLE</th>
+          <th style="width: 23%">TOOLS / METHOD</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="role-badge role-all">ALL</span></td><td>• <strong>SEPT 4: REAL-WORLD TESTING:</strong> Test system under live Webcam, RTSP IP Cameras & Video Files concurrently.</td><td>Real-world verification report</td><td>Live System Test</td></tr>
+        <tr><td><span class="role-badge role-rafay">RAFAY</span></td><td>• Conduct 30-minute extended stress test to verify memory stability & GPU temperature management.</td><td>System stability confirmed (30 FPS zero drops)</td><td>GPU System Monitor Audit</td></tr>
+        <tr><td><span class="role-badge role-aqib">AQIB</span></td><td>• Record 5-minute Backup Demo Video using OBS Studio (showing full pipeline & voice commands).<br>• Finalize Google Slides presentation deck featuring architecture, accuracy stats & video clips.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></td><td><code>demo_backup.mp4</code> + Presentation Deck</td><td>OBS Studio / Google Slides</td></tr>
+        <tr><td><span class="role-badge role-all">ALL</span></td><td>• <strong>SEPT 5 (FRI): Full Demo Rehearsals (3 complete run-throughs).</strong> Practice speech & live demo flow.</td><td>3 Rehearsals completed</td><td>Team Call / Live Rehearsal</td></tr>
+        <tr><td><span class="role-badge role-all">ALL</span></td><td>• <strong>SEPT 6: FINAL PRODUCTION SUBMISSION (SUBMIT EVERYTHING TO HACKATHON):</strong> Push code & links.</td><td><strong>FINAL SUBMISSION COMPLETE</strong></td><td>GitHub Push + Hackathon Form</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════ SECTION 5: DEEP DIVE CALENDAR & INDIVIDUAL SCHEDULE SECTION ═══════════════════════ -->
+<div class="page">
+
+  <div class="section-header"><span>Deep Dive Execution Calendar & Participant Task Breakdown (Aug 30 – Sept 6)</span></div>
+
+  <div class="info-card">
+    <h4>Calendar Grid & Master Schedule Overview</h4>
+    <p>This dedicated section breaks down the entire 8-day sprint into a calendar view followed by individual participant schedules for Rafay, Moiz, Areeba, and Aqib.</p>
+  </div>
+
+  <!-- CALENDAR GRID -->
+  <div class="cal-grid">
+    <div class="cal-day-box header-day">AUG 30 (SAT)</div>
+    <div class="cal-day-box header-day">AUG 31 (SUN)</div>
+    <div class="cal-day-box header-day">SEPT 1 (MON)</div>
+    <div class="cal-day-box header-day">SEPT 2 (TUE)</div>
+    <div class="cal-day-box header-day">SEPT 3 (WED)</div>
+    <div class="cal-day-box header-day">SEPT 4 (THU)</div>
+    <div class="cal-day-box header-day">SEPT 5-6 (FRI-SUN)</div>
+
+    <div class="cal-day-box">
+      <div class="cal-date">DAY 1</div>
+      <div class="cal-event-tag day-pill start">Sprint Start</div>
+      <ul class="cal-task-list">
+        <li><strong>Moiz:</strong> 10 videos + Violence Colab run</li>
+        <li><strong>Areeba:</strong> D-Fire 21K + Cleaning script</li>
+        <li><strong>Rafay:</strong> Async Buffer + FP16 GPU</li>
+        <li><strong>Aqib:</strong> Glassmorphism UI Layout</li>
+      </ul>
+    </div>
+
+    <div class="cal-day-box">
+      <div class="cal-date">DAY 2</div>
+      <div class="cal-event-tag day-pill start">Model Export</div>
+      <ul class="cal-task-list">
+        <li><strong>Moiz:</strong> Export Violence.pt + Fire Colab</li>
+        <li><strong>Areeba:</strong> Confusion matrix + Weapon data</li>
+        <li><strong>Rafay:</strong> Load Violence.pt into fight.py</li>
+        <li><strong>Aqib:</strong> README.md + Mermaid diagram</li>
+      </ul>
+    </div>
+
+    <div class="cal-day-box deadline">
+      <div class="cal-date">DAY 3</div>
+      <div class="cal-event-tag day-pill proto">Prototype Due</div>
+      <ul class="cal-task-list">
+        <li><strong>Moiz:</strong> Fire.pt export + Weapon Colab</li>
+        <li><strong>Areeba:</strong> Fire mAP50 evaluation</li>
+        <li><strong>Rafay:</strong> Batch test 20 clips</li>
+        <li><strong>Aqib:</strong> WebSocket UI verification</li>
+        <li><strong>ALL:</strong> Prototype Submission</li>
+      </ul>
+    </div>
+
+    <div class="cal-day-box">
+      <div class="cal-date">DAY 4</div>
+      <div class="cal-event-tag day-pill start">MVP Models</div>
+      <ul class="cal-task-list">
+        <li><strong>Rafay:</strong> YAMNet Audio + RTSP PoE</li>
+        <li><strong>Moiz:</strong> Weapon.pt export + Batch test</li>
+        <li><strong>Areeba:</strong> ML Evaluation Report</li>
+        <li><strong>Aqib:</strong> Chart.js + DEMO_SCRIPT.md</li>
+      </ul>
+    </div>
+
+    <div class="cal-day-box">
+      <div class="cal-date">DAY 5</div>
+      <div class="cal-event-tag day-pill start">Voice Controls</div>
+      <ul class="cal-task-list">
+        <li><strong>Rafay:</strong> Gemini Voice + Narrator WS</li>
+        <li><strong>Moiz:</strong> Responsive UI fine-tuning</li>
+        <li><strong>Areeba:</strong> False Positive error analysis</li>
+        <li><strong>Aqib:</strong> Evidence Snapshot Modal UI</li>
+      </ul>
+    </div>
+
+    <div class="cal-day-box">
+      <div class="cal-date">DAY 6</div>
+      <div class="cal-event-tag day-pill start">Live Testing</div>
+      <ul class="cal-task-list">
+        <li><strong>Rafay:</strong> 30-min GPU stress audit</li>
+        <li><strong>Moiz:</strong> Multi-camera verification</li>
+        <li><strong>Areeba:</strong> Accuracy stats sign-off</li>
+        <li><strong>Aqib:</strong> OBS 5-min demo recording</li>
+      </ul>
+    </div>
+
+    <div class="cal-day-box milestone">
+      <div class="cal-date">DAY 7-8</div>
+      <div class="cal-event-tag day-pill final">Final Submit</div>
+      <ul class="cal-task-list">
+        <li><strong>Sept 5:</strong> 3 Full Demo Rehearsals</li>
+        <li><strong>Sept 6:</strong> FINAL SUBMISSION</li>
+        <li>GitHub Push main branch</li>
+        <li>Submit Hackathon Form</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- INDIVIDUAL PARTICIPANT SCHEDULE BREAKDOWN -->
+  <div class="section-header"><span>Participant Schedule Breakdown (Individual Task Lists)</span></div>
+
+  <div class="grid-2">
+    <div class="member-schedule-card">
+      <h4><span class="role-badge role-rafay">Abdul Rafay (Team Lead & Pipeline Engineer)</span> <span>Aug 30 – Sept 6</span></h4>
+      <ul class="cal-task-list">
+        <li><strong>Aug 30 (Day 1):</strong> Execute baseline tests on video files (`python run.py --test-all`) + Build Async Frame Buffer in `prototype/camera/` + Enable PyTorch FP16 CUDA half-precision inference in `pipeline.py`.</li>
+        <li><strong>Aug 31 (Day 2):</strong> Integrate Moiz's `violence_classifier_best.pt` into `fight.py` + Calibrate proximity & velocity thresholds in `config.py` to eliminate false alarms.</li>
+        <li><strong>Sept 1 (Day 3):</strong> Execute automated test suite on 20 clips + Fix detector edge cases + Merge clean code to GitHub main branch for Prototype Submission.</li>
+        <li><strong>Sept 2 (Day 4):</strong> Load Fire v2 & Weapon models into PyTorch GPU pipeline + Build YAMNet audio sound classifier in `audio.py` + Configure RTSP IP camera streams.</li>
+        <li><strong>Sept 3 (Day 5):</strong> Connect Web Speech API & Gemini Voice Interpreter (`voice/interpreter.py`) + Test Urdu/English Gemini Narrator (`voice/narrator.py`).</li>
+        <li><strong>Sept 4-6 (Days 6-8):</strong> Conduct 30-minute GPU stress test + Lead 3 demo rehearsals + Submit Final Production Version.</li>
+      </ul>
+    </div>
+
+    <div class="member-schedule-card">
+      <h4><span class="role-badge role-moiz">Moiz (ML & Neural Networks Engineer)</span> <span>Aug 30 – Sept 6</span></h4>
+      <ul class="cal-task-list">
+        <li><strong>Aug 30 (Day 1):</strong> Download initial 10 test videos (fire, fight, crash, robbery, normal) + Search Roboflow `real life violence detection` + Start YOLOv8s-cls training on Colab T4 GPU (50 epochs).<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></li>
+        <li><strong>Aug 31 (Day 2):</strong> Export `violence_classifier_best.pt` to Drive + Download remaining 10 test videos (Total 20 videos) + Start Fire v2 model training on Colab (D-Fire, 80 epochs).<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></li>
+        <li><strong>Sept 1 (Day 3):</strong> Export `fire_smoke_best_v2.pt` to Drive + Launch Weapon model training on Colab (YOLOv8s, 60 epochs).<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></li>
+        <li><strong>Sept 2 (Day 4):</strong> Download `weapon_detection_best.pt` from Drive + Execute batch test suite on 20 videos & record accuracy log.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></li>
+        <li><strong>Sept 3-6 (Days 5-8):</strong> Assist Aqib on Dashboard responsive CSS styling + Multi-camera verification + Final submission.</li>
+      </ul>
+    </div>
+
+    <div class="member-schedule-card">
+      <h4><span class="role-badge role-areeba">Areeba (Data Scientist & Model Evaluator)</span> <span>Aug 30 – Sept 6</span></h4>
+      <ul class="cal-task-list">
+        <li><strong>Aug 30 (Day 1):</strong> Download D-Fire Dataset (21,000+ images) from Roboflow + Write Python corrupt file scanner (`cv2.imread`) + Build Albumentations weather augmentation notebook.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></li>
+        <li><strong>Aug 31 (Day 2):</strong> Run `model.val()` on Colab to plot Confusion Matrices & PR curves for Violence Classifier + Download & class-balance Weapon dataset.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></li>
+        <li><strong>Sept 1 (Day 3):</strong> Evaluate Fire v2 model metrics (mAP50) & compare against v1 baseline.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></li>
+        <li><strong>Sept 2 (Day 4):</strong> Compile comprehensive ML Evaluation Report covering precision, recall, and mAP for all 3 models.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></li>
+        <li><strong>Sept 3-6 (Days 5-8):</strong> Perform error analysis on false positive logs + Final accuracy stats sign-off.</li>
+      </ul>
+    </div>
+
+    <div class="member-schedule-card">
+      <h4><span class="role-badge role-aqib">Aqib (UI/UX Developer & Documentation Lead)</span> <span>Aug 30 – Sept 6</span></h4>
+      <ul class="cal-task-list">
+        <li><strong>Aug 30 (Day 1):</strong> Initiate Dashboard UI redesign in `dashboard.html` + Apply Dark Glassmorphism CSS layout.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></li>
+        <li><strong>Aug 31 (Day 2):</strong> Complete Dashboard UI (video feed border, scrolling alert log, status bar) + Write `README.md` + Draw Mermaid architecture diagram.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></li>
+        <li><strong>Sept 1 (Day 3):</strong> Test WebSocket real-time event alert pushes & evidence snapshot gallery.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></li>
+        <li><strong>Sept 2 (Day 4):</strong> Integrate Chart.js Analytics into Dashboard UI + Draft `DEMO_SCRIPT.md` narrative.<br><em>If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</em></li>
+        <li><strong>Sept 3-6 (Days 5-8):</strong> Build Evidence Snapshot Viewer Modal + Record 5-minute Backup Demo Video using OBS Studio + Finalize Google Slides presentation deck.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="footer">
+    VisionGuard ULTRA — Technical Architecture & Master Execution Blueprint | Generated Aug 30, 2026 | Confidential — Hackathon Team Only<br>
+    <strong>PROTOCOL REMINDER: If stuck anywhere, DO NOT waste time! Ask an AI assistant or contact Abdul Rafay (Team Lead) immediately.</strong>
+  </div>
+
+</div>
+
+</div>
+
+</body>
+</html>

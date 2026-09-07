@@ -1,0 +1,45 @@
+{
+  "scan_timestamp": "2026-09-04T01:09:16.645140",
+  "dataset_path": "e:\\Vision Guard\\dataset\\D-Fire.v1i.yolov8",
+  "dry_run": false,
+  "image_stats": {
+    "total_images_scanned": 16027,
+    "corrupt_images": 0,
+    "zero_byte_images": 0,
+    "duplicate_images": 0,
+    "valid_images": 16027,
+    "total_freed_bytes": 0,
+    "corrupt_files": [],
+    "zero_byte_files": [],
+    "duplicate_files": []
+  },
+  "label_stats": {
+    "total_labels_scanned": 4306,
+    "labels_with_errors": 2,
+    "total_invalid_lines": 35,
+    "total_valid_lines": 5187,
+    "fixed_files": [
+      {
+        "file": "e:\\Vision Guard\\dataset\\D-Fire.v1i.yolov8\\README.dataset.txt",
+        "removed_lines": 6,
+        "kept_lines": 0
+      },
+      {
+        "file": "e:\\Vision Guard\\dataset\\D-Fire.v1i.yolov8\\README.roboflow.txt",
+        "removed_lines": 29,
+        "kept_lines": 0
+      }
+    ],
+    "empty_after_fix": [
+      "e:\\Vision Guard\\dataset\\D-Fire.v1i.yolov8\\README.dataset.txt",
+      "e:\\Vision Guard\\dataset\\D-Fire.v1i.yolov8\\README.roboflow.txt"
+    ]
+  },
+  "class_distribution": {
+    "class_counts": {
+      "1": 2309,
+      "0": 2878
+    },
+    "total_annotations": 5187
+  }
+}

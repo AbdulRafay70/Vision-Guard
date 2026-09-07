@@ -1,0 +1,98 @@
+# ==============================================================================
+# VisionGuard AI — Comprehensive Git Ignore
+# ==============================================================================
+
+# Virtual Environments
+.venv/
+.venv*/
+venv/
+env/
+ENV/
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Sensitive Credentials & Cookies
+.env
+.env.local
+.env.*.local
+cookies.txt
+youtube_cookies.txt
+*.key
+*.pem
+
+# Frontend & Node Dependencies
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.vite/
+.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# AI Weights & Checkpoints (Exceeds GitHub limits or auto-downloaded by Ultralytics)
+*.pt
+*.pth
+*.onnx
+*.engine
+*.tflite
+*.weights
+
+# Large Datasets & Media
+dataset/
+fire/
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.flv
+*.wmv
+*.wav
+*.mp3
+
+# Runtime Evidence, Captures & Output
+prototype/evidence/
+!prototype/evidence/.gitkeep
+prototype/output/
+!prototype/output/.gitkeep
+prototype/test_videos/
+!prototype/test_videos/.gitkeep
+prototype/scratch/
+!prototype/scratch/.gitkeep
+
+# IDEs & System Files
+.qoder/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Log Files
+*.log
+logs/

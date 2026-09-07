@@ -1,0 +1,67 @@
+{
+  "scan_timestamp": "2026-09-04T01:11:12.215349",
+  "dataset_path": "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8",
+  "dry_run": false,
+  "image_stats": {
+    "total_images_scanned": 7121,
+    "corrupt_images": 0,
+    "zero_byte_images": 0,
+    "duplicate_images": 5,
+    "valid_images": 7116,
+    "total_freed_bytes": 331190,
+    "corrupt_files": [],
+    "zero_byte_files": [],
+    "duplicate_files": [
+      {
+        "duplicate": "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8\\train\\images\\Knife_95_jpeg.rf.83cdc30de8e67ec34914afc4f43df305.jpg",
+        "original": "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8\\train\\images\\Knife_30_jpeg.rf.9e3195181526f20c8eb7fa17aa6d0368.jpg"
+      },
+      {
+        "duplicate": "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8\\train\\images\\people-holding-all-types-of-guns_274_jpeg.rf.6308c5ff40a77847366efc92521d5496.jpg",
+        "original": "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8\\train\\images\\Handgun_21_jpeg.rf.e68205e43802a1de471f7a5ba4396a16.jpg"
+      },
+      {
+        "duplicate": "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8\\train\\images\\people-holding-all-types-of-guns_349_jpeg.rf.40a1f2fbc714afbce70ebe1148fe13d7.jpg",
+        "original": "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8\\train\\images\\Automatic-Rifle_3_jpeg.rf.04ecd31e516aed95492fa072ec92a4b1.jpg"
+      },
+      {
+        "duplicate": "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8\\train\\images\\Sniper_74_jpeg.rf.7ed29570e02a699dcd1a72420b0564e8.jpg",
+        "original": "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8\\train\\images\\Sniper_17_jpeg.rf.5f33e8577d8816e6dc29d4eeef2433dc.jpg"
+      },
+      {
+        "duplicate": "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8\\train\\images\\soldiers-with-guns_302_jpeg.rf.4afde2b37abda332eadb8ef6af6cde29.jpg",
+        "original": "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8\\train\\images\\soldiers-with-guns_182_jpeg.rf.3883c1899b58a5c3fa9f0eefb0ee7883.jpg"
+      }
+    ]
+  },
+  "label_stats": {
+    "total_labels_scanned": 7123,
+    "labels_with_errors": 2,
+    "total_invalid_lines": 39,
+    "total_valid_lines": 27649,
+    "fixed_files": [
+      {
+        "file": "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8\\README.dataset.txt",
+        "removed_lines": 6,
+        "kept_lines": 0
+      },
+      {
+        "file": "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8\\README.roboflow.txt",
+        "removed_lines": 33,
+        "kept_lines": 0
+      }
+    ],
+    "empty_after_fix": [
+      "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8\\README.dataset.txt",
+      "e:\\Vision Guard\\dataset\\weapon.v9i.yolov8\\README.roboflow.txt"
+    ]
+  },
+  "class_distribution": {
+    "class_counts": {
+      "2": 7532,
+      "0": 11545,
+      "1": 8572
+    },
+    "total_annotations": 27649
+  }
+}

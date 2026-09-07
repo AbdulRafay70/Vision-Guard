@@ -1,0 +1,15 @@
+{
+  "benchmark": "baseline_synchronous",
+  "video": "Security Camera Video of Fire at WLNE.mp4",
+  "resolution": "1280x720",
+  "source_fps": 29.97,
+  "frames_tested": 300,
+  "total_wall_time_sec": 42.74,
+  "display_fps": 7.02,
+  "primary_detector_latency_ms": 60.44,
+  "total_pipeline_latency_ms": 134.09,
+  "dropped_presentation_frames": 866,
+  "peak_vram_mb": 144.1,
+  "device": "Quadro T1000",
+  "notes": "Synchronous single-thread execution chaining all models on main loop"
+}
