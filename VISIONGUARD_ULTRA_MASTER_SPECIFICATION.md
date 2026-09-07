@@ -10,7 +10,7 @@
 - **Core Technologies:** Computer Vision, Audio Intelligence, Deep Learning, Generative AI, Edge Computing
 - **Primary Frameworks:** PyTorch, Ultralytics YOLOv8, OpenCV, Google Gemini 2.0 Flash, FastAPI, React/Vite
 - **Core Team:** Abdul Rafay (Lead Architect), Moiz (ML Engineer), Areeba (Data Scientist), Aqib (UI/UX)
-- **Repository:** [https://github.com/AbdulRafay70/Alibaba-AI-hackathon](https://github.com/AbdulRafay70/Alibaba-AI-hackathon)
+- **Repository:** [https://github.com/AbdulRafay70/Vision-Guard](https://github.com/AbdulRafay70/Vision-Guard)
 
 ---
 

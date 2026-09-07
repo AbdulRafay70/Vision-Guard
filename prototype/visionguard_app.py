@@ -229,6 +229,7 @@ class VisionGuardStudio(tk.Tk):
         self.video_dict = {}  # display_name -> full_path
 
         paths_to_scan = [
+            PROTOTYPE_DIR / "Videos",
             Path(r"D:\testing videos"),
             PROTOTYPE_DIR / "test_videos",
         ]

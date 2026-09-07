@@ -289,6 +289,16 @@ def run_video(args):
                 source.toggle_pause()
             elif key == ord(' '):
                 source.step_frame()
+            elif key == ord('d') or key == ord('D'):
+                display.toggle_detections()
+            elif key == ord('t') or key == ord('T'):
+                display.toggle_tracks()
+            elif key == ord('k') or key == ord('K'):
+                display.toggle_skeletons()
+            elif key == ord('s') or key == ord('S'):
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                cv2.imwrite(str(config.EVIDENCE_DIR / f"screenshot_{timestamp}.jpg"), display_frame)
+                print(f"  📸 Screenshot saved!")
 
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}[STOP] Interrupted.{Style.RESET_ALL}")
