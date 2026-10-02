@@ -45,6 +45,8 @@ class FireDetector(BaseEventDetector):
             "fire_area_percent": total_fire_area,
             "smoke_area_percent": total_smoke_area,
             "fire_count": len(fire_dets),
+            # True when every fire box came from the colour fallback (no trained model)
+            "color_only": bool(fire_dets) and all(d.class_id == 990 for d in fire_dets),
             "smoke_count": len(smoke_dets),
         }
 
@@ -84,6 +86,13 @@ class FireDetector(BaseEventDetector):
             # Smoke-only early warning: sustained, confident plume
             (smoke_frames >= 5 and _span(smoke_samples) >= 2.0 and peak_smoke_conf >= 0.50)
         )
+        # Colour-fallback fire (no trained model) can't tell flames from orange
+        # objects, so it needs much stronger evidence: present in most frames for
+        # >= 2s and covering a meaningful part of the frame.
+        if fire_samples and all(s.get("color_only") for s in fire_samples) and smoke_frames == 0:
+            is_genuine = (_span(fire_samples) >= 2.0 and recent_fire_ratio >= 0.8
+                          and max(s["fire_area_percent"] for s in fire_samples) >= 1.0)
+
         if not is_genuine:
             return 0
 

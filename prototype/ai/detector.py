@@ -48,6 +48,10 @@ def _categorize_class(class_name: str) -> str:
         return "object"
 
 
+# Marks fire found by the HSV colour fallback (less reliable than the trained model)
+COLOR_FIRE_CLASS_ID = 990
+
+
 class ObjectDetector:
     """
     YOLOv8s-based object detector.
@@ -347,6 +351,13 @@ class ObjectDetector:
         # Find contours
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+        # Flicker check: real flames change shape between frames, while static
+        # orange/bright objects (shelves, signs, lamps) do not.
+        prev_mask = getattr(self, "_prev_fire_mask", None)
+        if prev_mask is None or prev_mask.shape != mask.shape:
+            prev_mask = None
+        self._prev_fire_mask = mask
+
         fire_dets = []
         for contour in contours:
             area = cv2.contourArea(contour)
@@ -355,10 +366,17 @@ class ObjectDetector:
             # Only consider significant fire regions
             if frame_percent >= config.FIRE_MIN_AREA_PERCENT:
                 x, y, cw, ch = cv2.boundingRect(contour)
+                if prev_mask is None:
+                    continue  # Need two frames to confirm flicker
+                cur_roi = mask[y:y + ch, x:x + cw] > 0
+                prev_roi = prev_mask[y:y + ch, x:x + cw] > 0
+                changed = np.count_nonzero(cur_roi ^ prev_roi) / max(1, np.count_nonzero(cur_roi))
+                if changed < 0.08:
+                    continue  # Static colour blob, not a flickering flame
                 det = Detection(
                     bbox=[float(x), float(y), float(x + cw), float(y + ch)],
                     confidence=min(0.5 + frame_percent * 0.05, 0.85),  # Estimated confidence
-                    class_id=1000,
+                    class_id=COLOR_FIRE_CLASS_ID,
                     class_name="fire",
                     category="fire",
                 )

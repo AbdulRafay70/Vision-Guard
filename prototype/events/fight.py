@@ -31,15 +31,19 @@ class FightDetector(BaseEventDetector):
     def __init__(self):
         super().__init__(event_type="fight", window_seconds=8.0)
         self.min_persistence = config.FIGHT_MIN_DURATION_SECONDS
-        # Per-track wrist history: track_id -> (timestamp, wrists normalised by body height, raw kps, speed)
+        # Per-track wrist history: track_id -> dict(t, rel, abs, kps, speed, approach)
         self._wrist_history: Dict[int, Any] = {}
 
     @staticmethod
     def _body_height(bbox) -> float:
         return max(1.0, bbox[3] - bbox[1])
 
-    def _strike_score(self, pose, now: float) -> Dict[str, float]:
-        """Return wrist speed (body-heights/sec) and raised-arm posture for one pose."""
+    def _strike_score(self, pose, now: float, partner_centre=None) -> Dict[str, float]:
+        """
+        Return for one pose: wrist speed relative to the torso and speed of the
+        wrist *toward the nearest partner* (both in body-heights/sec), raised-arm
+        posture, and whether this is a fresh pose (not a repeated cached one).
+        """
         kps = pose.keypoints
         h = self._body_height(pose.bbox)
         raised = 0
@@ -54,29 +58,70 @@ class FightDetector(BaseEventDetector):
                     raised += 1
 
         speed = 0.0
+        approach = 0.0
         tid = pose.track_id
-        if tid is not None:
-            prev = self._wrist_history.get(tid)
-            # Poses come from an async cache and repeat across frames; only
-            # measure motion when a genuinely new pose arrives.
-            if prev is not None and np.array_equal(prev[2], kps):
-                return {"speed": prev[3], "raised": raised}
-            # Wrist positions relative to the torso centre so walking doesn't count as striking
-            torso = [k for k in (self._LS, self._RS, self._LH, self._RH) if kps[k][2] > 0.3]
-            if torso:
-                cx = float(np.mean([kps[k][0] for k in torso]))
-                cy = float(np.mean([kps[k][1] for k in torso]))
-                wr = np.array([[(kps[w][0] - cx) / h, (kps[w][1] - cy) / h] if kps[w][2] > 0.3
-                               else [np.nan, np.nan] for w in (self._LW, self._RW)])
-                if prev is not None:
-                    dt = now - prev[0]
-                    if 0.02 < dt < 0.6:
-                        d = np.linalg.norm(wr - prev[1], axis=1)
-                        d = d[~np.isnan(d)]
-                        if d.size:
-                            speed = float(d.max() / dt)
-                self._wrist_history[tid] = (now, wr, kps.copy(), speed)
-        return {"speed": speed, "raised": raised}
+        if tid is None:
+            return {"speed": 0.0, "approach": 0.0, "raised": raised, "fresh": False}
+        prev = self._wrist_history.get(tid)
+        # Poses come from an async cache and repeat across frames; only measure
+        # motion (and count strikes) when a genuinely new pose arrives.
+        if prev is not None and np.array_equal(prev["kps"], kps):
+            return {"speed": prev["speed"], "approach": prev["approach"], "raised": raised, "fresh": False}
+
+        wr_rel = np.full((2, 2), np.nan)
+        wr_abs = np.full((2, 2), np.nan)
+        torso = [k for k in (self._LS, self._RS, self._LH, self._RH) if kps[k][2] > 0.3]
+        if torso:
+            cx = float(np.mean([kps[k][0] for k in torso]))
+            cy = float(np.mean([kps[k][1] for k in torso]))
+            for n, w in enumerate((self._LW, self._RW)):
+                if kps[w][2] > 0.3:
+                    wr_abs[n] = kps[w][:2]
+                    # Relative to torso so walking doesn't count as striking
+                    wr_rel[n] = [(kps[w][0] - cx) / h, (kps[w][1] - cy) / h]
+        if prev is not None:
+            dt = now - prev["t"]
+            if 0.02 < dt < 0.6:
+                d = np.linalg.norm(wr_rel - prev["rel"], axis=1)
+                d = d[~np.isnan(d)]
+                if d.size:
+                    speed = float(d.max() / dt)
+                if partner_centre is not None:
+                    pc = np.asarray(partner_centre, dtype=float)
+                    before = np.linalg.norm(prev["abs"] - pc, axis=1)
+                    after = np.linalg.norm(wr_abs - pc, axis=1)
+                    closing = (before - after) / h
+                    closing = closing[~np.isnan(closing)]
+                    if closing.size:
+                        approach = float(closing.max() / dt)
+        self._wrist_history[tid] = {"t": now, "rel": wr_rel, "abs": wr_abs, "kps": kps.copy(),
+                                    "speed": speed, "approach": approach}
+        return {"speed": speed, "approach": approach, "raised": raised, "fresh": True}
+
+    def _wrist_contact(self, pose, tracks_by_id) -> int:
+        """1 if an extended wrist reaches into another person's upper body (head/torso)."""
+        kps = pose.keypoints
+        h = self._body_height(pose.bbox)
+        shoulders = [k for k in (self._LS, self._RS) if kps[k][2] > 0.3]
+        if not shoulders:
+            return 0
+        sx = float(np.mean([kps[k][0] for k in shoulders]))
+        sy = float(np.mean([kps[k][1] for k in shoulders]))
+        for w in (self._LW, self._RW):
+            if kps[w][2] <= 0.3:
+                continue
+            wx, wy = kps[w][0], kps[w][1]
+            if np.hypot(wx - sx, wy - sy) < 0.30 * h:
+                continue  # Arm tucked in (guard), not reaching
+            for tid, other in tracks_by_id.items():
+                if tid == pose.track_id:
+                    continue
+                x1, y1, x2, y2 = other.bbox
+                # Inner 80% width, upper 55% height of the other person = head/torso
+                mx = 0.1 * (x2 - x1)
+                if x1 + mx < wx < x2 - mx and y1 < wy < y1 + 0.55 * (y2 - y1):
+                    return 1
+        return 0
 
     def extract_signals(self, analysis: FrameAnalysis) -> Optional[Dict[str, Any]]:
         persons = analysis.persons
@@ -93,8 +138,9 @@ class FightDetector(BaseEventDetector):
                 p1, p2 = persons[i], persons[j]
                 avg_h = (self._body_height(p1.bbox) + self._body_height(p2.bbox)) / 2
                 dist = float(np.hypot(p1.center[0] - p2.center[0], p1.center[1] - p2.center[1]))
-                limit = min(config.FIGHT_PROXIMITY_THRESHOLD * 1.5, 1.1 * avg_h) if avg_h > 40 \
-                    else config.FIGHT_PROXIMITY_THRESHOLD
+                # Purely relative to body size: a fixed pixel cap wrongly rejected
+                # close-up subjects (e.g. ~1000px-tall people in portrait video).
+                limit = 1.1 * avg_h if avg_h > 40 else config.FIGHT_PROXIMITY_THRESHOLD
                 if dist < limit:
                     close_pairs.append({"person1": p1.vg_id, "person2": p2.vg_id,
                                         "t1": p1.track_id, "t2": p2.track_id,
@@ -107,17 +153,31 @@ class FightDetector(BaseEventDetector):
 
         aggressive_poses = 0
         strikers = 0
+        fresh_strikes = 0
+        contacts = 0
         max_wrist_speed = 0.0
+        tracks_by_id = {p.track_id: p for p in persons}
+        partners: Dict[int, Any] = {}
+        for cp in close_pairs:
+            partners.setdefault(cp["t1"], tracks_by_id[cp["t2"]].center)
+            partners.setdefault(cp["t2"], tracks_by_id[cp["t1"]].center)
         for pose in poses:
-            st = self._strike_score(pose, now)
-            if pose.track_id is not None and pose.track_id not in involved:
+            st = self._strike_score(pose, now, partners.get(pose.track_id))
+            if pose.track_id not in involved:
                 continue  # Only people in the close pair matter
             aggressive_poses += st["raised"]
             max_wrist_speed = max(max_wrist_speed, st["speed"])
-            # > ~1.5 body-heights/sec of wrist motion relative to torso = a swing/punch
-            if st["speed"] > 1.5:
+            hit = self._wrist_contact(pose, tracks_by_id)
+            contacts += hit
+            # A punch is a fast wrist movement that travels *toward* the other
+            # person (or lands on them). Speed alone also fires on equipment
+            # handling, hose jitter, gesturing, etc. Pose is sampled only a few
+            # times per second, so thresholds are modest.
+            is_strike = (st["speed"] > 1.0 and st["approach"] > 0.6) or hit
+            if is_strike:
                 strikers += 1
-
+                if st["fresh"]:
+                    fresh_strikes += 1
         # Drop wrist history for tracks that disappeared
         live = {p.track_id for p in persons}
         for tid in list(self._wrist_history):
@@ -147,6 +207,8 @@ class FightDetector(BaseEventDetector):
             "closest_norm_distance": min(p["norm_distance"] for p in close_pairs),
             "aggressive_poses": aggressive_poses,
             "strikers": strikers,
+            "contacts": contacts,
+            "fresh_strikes": fresh_strikes,
             "max_wrist_speed": max_wrist_speed,
             "striking": striking,
             "high_velocity_persons": high_velocity_persons,
@@ -162,7 +224,9 @@ class FightDetector(BaseEventDetector):
         n = len(signal_window)
         striking_frames = sum(1 for s in signal_window if s.get("striking"))
         violent_frames = sum(1 for s in signal_window if s.get("violence_confirmed"))
-        strike_frames = sum(1 for s in signal_window if s.get("strikers", 0) >= 1)
+        # Distinct strike events (fresh pose updates only — cached poses repeat
+        # across many frames and must not be counted as repeated punches)
+        strike_frames = sum(s.get("fresh_strikes", 0) for s in signal_window)
 
         # Recurrence gate: one raised arm or one hug is not a fight.
         repeated_striking = striking_frames >= 4 and strike_frames >= 2
@@ -176,7 +240,7 @@ class FightDetector(BaseEventDetector):
 
         if strike_frames >= 2:
             score += 20  # Repeated punches/swings
-        if strike_frames >= 5:
+        if strike_frames >= 4:
             score += 10
         if any(s.get("aggressive_poses", 0) >= 2 for s in signal_window[-5:]):
             score += 10  # Guard/attack posture
