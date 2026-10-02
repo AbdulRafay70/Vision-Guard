@@ -34,6 +34,8 @@ class DisplayRenderer:
         self.show_detections = True
         self.show_tracks = True
         self.show_skeletons = True  # Enabled by default: yellow 17-keypoint body skeletons & joints
+        # Display-side skeleton smoothing state: track_id -> smoothed (17, 3) keypoints
+        self._skeleton_state = {}
         self.show_info = True
 
     def render(self, frame: np.ndarray, analysis: Optional[FrameAnalysis],
@@ -51,7 +53,8 @@ class DisplayRenderer:
                 self._draw_detections(display, analysis)
 
             if self.show_skeletons:
-                self._draw_skeletons(display, analysis.poses)
+                self._draw_skeletons(display, analysis.poses, analysis.tracks)
+                self._prune_skeletons(analysis.poses)
 
             # Draw fire/smoke detections with special color
             self._draw_fire_smoke(display, analysis)
@@ -118,22 +121,68 @@ class DisplayRenderer:
             cv2.putText(frame, label, (x1, y1 - 5),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
-    def _draw_skeletons(self, frame: np.ndarray, poses: List[PoseResult]):
-        """Draw pose skeletons using fast integer line rasterization (cv2.LINE_8)."""
-        for pose in poses:
-            kps = pose.keypoints
+    def _align_to_track(self, pose: PoseResult, tracks: List[Track]) -> np.ndarray:
+        """
+        Pose runs asynchronously at a few FPS, so its keypoints describe where
+        the body was a moment ago. The tracker box is updated every frame, so we
+        map the skeleton from the pose's box onto the current track box. This
+        keeps the yellow skeleton glued to the moving body instead of trailing.
+        """
+        kps = pose.keypoints.astype(np.float32).copy()
+        if pose.track_id is None:
+            return kps
+        track = next((t for t in tracks if t.track_id == pose.track_id), None)
+        if track is None:
+            return kps
+        px1, py1, px2, py2 = pose.bbox
+        tx1, ty1, tx2, ty2 = track.bbox
+        pw, ph = max(1.0, px2 - px1), max(1.0, py2 - py1)
+        tw, th = max(1.0, tx2 - tx1), max(1.0, ty2 - ty1)
+        sx, sy = tw / pw, th / ph
+        # Ignore implausible mappings (e.g. track box briefly occluded/clipped)
+        if not (0.6 < sx < 1.6 and 0.6 < sy < 1.6):
+            return kps
+        kps[:, 0] = tx1 + (kps[:, 0] - px1) * sx
+        kps[:, 1] = ty1 + (kps[:, 1] - py1) * sy
+        return kps
 
-            # Fast integer lines (saves ~70% CPU rasterization time compared to anti-aliased subpixel lines)
+    def _smooth_skeleton(self, key, kps: np.ndarray) -> np.ndarray:
+        """Per-frame EMA so joints glide between pose updates instead of jumping."""
+        prev = self._skeleton_state.get(key)
+        if prev is not None:
+            # Move fast when the body moves a lot, smooth heavily when it is still
+            h = max(1.0, float(np.ptp(kps[:, 1])))
+            motion = np.linalg.norm(kps[:, :2] - prev[:, :2], axis=1) / h
+            alpha = np.clip(0.35 + motion * 3.0, 0.35, 0.9)[:, None]
+            valid = (kps[:, 2] > 0.25) & (prev[:, 2] > 0.25)
+            blended = prev[:, :2] + alpha * (kps[:, :2] - prev[:, :2])
+            kps[valid, :2] = blended[valid]
+        self._skeleton_state[key] = kps.copy()
+        return kps
+
+    def _draw_skeletons(self, frame: np.ndarray, poses: List[PoseResult], tracks: List[Track] = None):
+        """Draw anti-aliased pose skeletons aligned to the live track and smoothed over time."""
+        tracks = tracks or []
+        for pose in poses:
+            kps = self._align_to_track(pose, tracks)
+            if pose.track_id is not None:
+                kps = self._smooth_skeleton(pose.track_id, kps)
+
+            body_h = max(1.0, pose.bbox[3] - pose.bbox[1])
+            thickness = 2 if body_h < 250 else 3
+            radius = 3 if body_h < 250 else 4
+
             for i, j in SKELETON_CONNECTIONS:
                 if kps[i][2] > 0.25 and kps[j][2] > 0.25:
-                    pt1 = (int(kps[i][0]), int(kps[i][1]))
-                    pt2 = (int(kps[j][0]), int(kps[j][1]))
-                    cv2.line(frame, pt1, pt2, config.COLOR_SKELETON, 2, cv2.LINE_8)
+                    # Sub-pixel anti-aliased lines (shift=4 -> 1/16 px precision) for smooth motion
+                    pt1 = (int(kps[i][0] * 16), int(kps[i][1] * 16))
+                    pt2 = (int(kps[j][0] * 16), int(kps[j][1] * 16))
+                    cv2.line(frame, pt1, pt2, config.COLOR_SKELETON, thickness, cv2.LINE_AA, 4)
 
-            # Draw keypoints (fast integer circles)
-            for i, (x, y, conf) in enumerate(kps):
+            for x, y, conf in kps:
                 if conf > 0.25:
-                    cv2.circle(frame, (int(x), int(y)), 3, config.COLOR_SKELETON, -1, cv2.LINE_8)
+                    cv2.circle(frame, (int(x * 16), int(y * 16)), radius * 16,
+                               config.COLOR_SKELETON, -1, cv2.LINE_AA, 4)
 
             # Show body angle if significant
             angle = pose.body_angle
@@ -144,6 +193,12 @@ class DisplayRenderer:
                 color = config.COLOR_RISK_HIGH if angle > 45 else config.COLOR_RISK_MEDIUM
                 cv2.putText(frame, label, (int(center[0]), int(center[1]) - 10),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_8)
+
+    def _prune_skeletons(self, poses: List[PoseResult]):
+        live = {p.track_id for p in poses if p.track_id is not None}
+        for key in list(self._skeleton_state):
+            if key not in live:
+                del self._skeleton_state[key]
 
     def _draw_fire_smoke(self, frame: np.ndarray, analysis: FrameAnalysis):
         """Draw fire/smoke with flashing border and freshness indication."""

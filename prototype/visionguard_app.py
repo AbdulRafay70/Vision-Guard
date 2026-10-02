@@ -395,8 +395,8 @@ class VisionGuardStudio(tk.Tk):
         self.total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         frame_interval = 1.0 / self.source_fps
 
-        # Start at frame 450 for WLNE fire if long video, else 0
-        start_frame = 450 if ("wlne" in Path(video_path).name.lower() and self.total_frames > 500) else 0
+        # Always analyse from the first frame so events visible at the start are caught
+        start_frame = 0
         if start_frame > 0:
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
 
@@ -455,7 +455,6 @@ class VisionGuardStudio(tk.Tk):
                         t_wall_start = time.time()
                         paused_duration = 0.0
                         pause_start = 0.0
-                        start_frame = 450 if ("wlne" in Path(video_path).name.lower() and self.total_frames > 500) else 0
                         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
                         continue
                     else:

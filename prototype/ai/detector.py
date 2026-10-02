@@ -48,6 +48,10 @@ def _categorize_class(class_name: str) -> str:
         return "object"
 
 
+# Marks fire found by the HSV colour fallback (less reliable than the trained model)
+COLOR_FIRE_CLASS_ID = 990
+
+
 class ObjectDetector:
     """
     YOLOv8s-based object detector.
@@ -88,18 +92,21 @@ class ObjectDetector:
             else:
                 raise
 
-        # Try to load fire model if it exists
-        fire_model_path = Path(config.FIRE_MODEL)
-        if fire_model_path.exists():
+        # Load the fire/smoke model: prefer v2, fall back to v1. Loading only one
+        # avoids paying for (and holding GPU memory for) a model we discard.
+        for fire_path in (Path(config.FIRE_MODEL_V2), Path(config.FIRE_MODEL)):
+            if not fire_path.exists():
+                continue
             try:
                 from ultralytics import YOLO
-                logger.info("[DETECTOR] Loading fire/smoke model: %s", fire_model_path.name)
-                self.fire_model = YOLO(str(fire_model_path))
+                logger.info("[DETECTOR] Loading fire/smoke model: %s", fire_path.name)
+                self.fire_model = YOLO(str(fire_path))
                 logger.info("[DETECTOR] Fire/smoke model loaded.")
+                break
             except Exception as e:
-                logger.warning("[DETECTOR] Failed to load fire model: %s. Fire detection via color analysis only.", e)
-        else:
-            logger.info("[DETECTOR] No fire/smoke model found — fire detection via color analysis only.")
+                logger.warning("[DETECTOR] Failed to load fire model %s: %s", fire_path.name, e)
+        if self.fire_model is None:
+            logger.info("[DETECTOR] No fire/smoke model loaded — fire detection via color analysis only.")
 
         # Try to load violence classifier model if it exists
         violence_model_path = Path(config.VIOLENCE_MODEL)
@@ -130,17 +137,6 @@ class ObjectDetector:
         else:
             self.weapon_model = None
             logger.info("[DETECTOR] No weapon detection model found — using COCO knife class only.")
-
-        # Prefer Fire v2 when available; retain the loaded v1 model if v2 fails.
-        fire_v2_path = Path(config.FIRE_MODEL_V2)
-        if fire_v2_path.exists():
-            try:
-                from ultralytics import YOLO
-                logger.info("[DETECTOR] Loading Fire/Smoke v2 model: %s", fire_v2_path.name)
-                self.fire_model = YOLO(str(fire_v2_path))
-                logger.info("[DETECTOR] Fire/Smoke v2 model loaded (replaces v1).")
-            except Exception as e:
-                logger.warning("[DETECTOR] Failed to load Fire v2 model: %s", e)
 
         # Load Normal Scene Verifier model (context governor)
         normal_scene_path = Path(config.NORMAL_SCENE_MODEL)
@@ -355,6 +351,13 @@ class ObjectDetector:
         # Find contours
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+        # Flicker check: real flames change shape between frames, while static
+        # orange/bright objects (shelves, signs, lamps) do not.
+        prev_mask = getattr(self, "_prev_fire_mask", None)
+        if prev_mask is None or prev_mask.shape != mask.shape:
+            prev_mask = None
+        self._prev_fire_mask = mask
+
         fire_dets = []
         for contour in contours:
             area = cv2.contourArea(contour)
@@ -363,10 +366,17 @@ class ObjectDetector:
             # Only consider significant fire regions
             if frame_percent >= config.FIRE_MIN_AREA_PERCENT:
                 x, y, cw, ch = cv2.boundingRect(contour)
+                if prev_mask is None:
+                    continue  # Need two frames to confirm flicker
+                cur_roi = mask[y:y + ch, x:x + cw] > 0
+                prev_roi = prev_mask[y:y + ch, x:x + cw] > 0
+                changed = np.count_nonzero(cur_roi ^ prev_roi) / max(1, np.count_nonzero(cur_roi))
+                if changed < 0.08:
+                    continue  # Static colour blob, not a flickering flame
                 det = Detection(
                     bbox=[float(x), float(y), float(x + cw), float(y + ch)],
                     confidence=min(0.5 + frame_percent * 0.05, 0.85),  # Estimated confidence
-                    class_id=1000,
+                    class_id=COLOR_FIRE_CLASS_ID,
                     class_name="fire",
                     category="fire",
                 )
