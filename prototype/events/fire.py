@@ -12,7 +12,7 @@ import config
 class FireDetector(BaseEventDetector):
     def __init__(self):
         super().__init__(event_type="fire", window_seconds=10.0)
-        self.min_persistence = 1.5  # Fire is urgent — shorter persistence
+        self.min_persistence = 0.8  # Fire is urgent — confirm quickly like a human operator would
 
     def check(self, analysis: FrameAnalysis) -> Optional[Any]:
         alert = super().check(analysis)
@@ -49,21 +49,40 @@ class FireDetector(BaseEventDetector):
         }
 
     def calculate_risk(self, signal_window: List[Dict[str, Any]]) -> int:
-        # Require genuine recurrence across the window (filters 1-2 frame optical glitches)
-        fire_frames = sum(1 for s in signal_window if s.get("fire_detected"))
-        smoke_frames = sum(1 for s in signal_window if s.get("smoke_detected"))
+        # Human-like confirmation: a person watching CCTV calls "fire" once they
+        # see flames *keep appearing* for a moment, not after a single flicker
+        # and not only when the model is extremely confident. The previous gate
+        # demanded peak confidence >= 0.65, but fire models routinely score
+        # real early-stage CCTV fire at 0.40-0.60, so fires were missed at the
+        # start and only flagged once they were large. Smoke alone was also
+        # never accepted, although smoke is often the first visible sign.
+        fire_samples = [s for s in signal_window if s.get("fire_detected")]
+        smoke_samples = [s for s in signal_window if s.get("smoke_detected")]
+        fire_frames = len(fire_samples)
+        smoke_frames = len(smoke_samples)
 
         peak_fire_conf = max((s.get("fire_confidence", 0.0) for s in signal_window), default=0.0)
         peak_smoke_conf = max((s.get("smoke_confidence", 0.0) for s in signal_window), default=0.0)
 
-        # Minimum recurrence gate:
-        # 1) Sustained fire: at least 3 detection frames and peak fire conf >= 0.35
-        # 2) Sustained smoke: at least 4 detection frames and peak smoke conf >= 0.55
-        # 3) Corroborated: at least 2 fire frames and 2 smoke frames
+        def _span(samples):
+            if len(samples) < 2:
+                return 0.0
+            return samples[-1].get("_timestamp", 0.0) - samples[0].get("_timestamp", 0.0)
+
+        # Ratio of recent samples containing fire — filters one-off glitches
+        recent = signal_window[-10:]
+        recent_fire_ratio = sum(1 for s in recent if s.get("fire_detected")) / len(recent)
+
         is_genuine = (
-            (fire_frames >= 3 and peak_fire_conf >= 0.65) or
-            (fire_frames >= 2 and smoke_frames >= 2 and peak_fire_conf >= 0.65) or
-            (smoke_frames >= 6 and peak_smoke_conf >= 0.80 and fire_frames >= 1)
+            # Sustained fire: recurring over >= 0.6s with a clear detection
+            (fire_frames >= 3 and _span(fire_samples) >= 0.6
+             and peak_fire_conf >= 0.45 and recent_fire_ratio >= 0.4) or
+            # Very confident fire confirms faster
+            (fire_frames >= 2 and peak_fire_conf >= 0.70) or
+            # Fire corroborated by smoke
+            (fire_frames >= 2 and smoke_frames >= 2 and peak_fire_conf >= 0.40) or
+            # Smoke-only early warning: sustained, confident plume
+            (smoke_frames >= 5 and _span(smoke_samples) >= 2.0 and peak_smoke_conf >= 0.50)
         )
         if not is_genuine:
             return 0
@@ -72,25 +91,22 @@ class FireDetector(BaseEventDetector):
         score = 0
 
         # ── Fire scoring (confidence-gated tiers) ──────────────────────
-        if latest["fire_detected"]:
-            fire_conf = latest["fire_confidence"]
-            best_conf = max(fire_conf, peak_fire_conf)
+        if fire_frames > 0:
+            best_conf = peak_fire_conf
 
             if best_conf > 0.85:
                 score += 45   # Very high confidence — almost certainly fire
             elif best_conf >= 0.65:
                 score += 35   # Confident fire
             elif best_conf >= 0.45:
-                score += 25   # Clear fire
+                score += 30   # Clear fire — passes FIRE_RISK_GATE once recurrence is confirmed
             else:
-                score += 15   # Early / low-confidence fire
+                score += 20   # Early / low-confidence fire
 
         # ── Smoke scoring (more reliable, less FP-prone) ───────────────
-        if latest["smoke_detected"]:
+        if smoke_frames > 0:
             score += 20       # Smoke base
-            smoke_conf = latest.get("smoke_confidence", 0.0)
-            peak_smoke_conf = max(s.get("smoke_confidence", 0.0) for s in signal_window)
-            best_smoke = max(smoke_conf, peak_smoke_conf)
+            best_smoke = peak_smoke_conf
             if best_smoke > 0.60:
                 score += 15   # High-confidence smoke
             elif best_smoke >= 0.35:

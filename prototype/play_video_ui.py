@@ -42,7 +42,7 @@ def main():
 
     source_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    start_frame = 450 if total_frames > 500 else 0
+    start_frame = 0  # Analyse from the first frame so early events are not skipped
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
 
     window_title = "VisionGuard AI — Live Detection Player"
@@ -127,7 +127,6 @@ def main():
                 if target_frame >= total_frames:
                     t_wall_start = time.time()
                     paused_duration = 0.0
-                    start_frame = 450 if ("wlne" in Path(video_path).name.lower() and total_frames > 500) else 0
                     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
                     continue
 

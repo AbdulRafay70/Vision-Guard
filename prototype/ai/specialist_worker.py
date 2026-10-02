@@ -284,8 +284,10 @@ class SpecialistWorker:
             if elapsed > 0:
                 self._specialist_fps[task] = round(self._run_counts[task] / elapsed, 1)
 
-            # Brief yield to prevent pegging the core
-            time.sleep(0.002)
+            # Yield proportionally to the inference cost so the primary
+            # detector/tracker always gets GPU time between specialist runs.
+            run_time = time.monotonic() - t_start
+            time.sleep(min(0.02, max(0.002, run_time * 0.3)))
 
     def _select_next_task(self, tracks: List[Track], scene_state: SceneState) -> Optional[str]:
         """
@@ -300,17 +302,23 @@ class SpecialistWorker:
         candidates = []  # (task_name, overdue_ratio, weight)
 
         # 1. Normal scene governor evaluation (~2 FPS context governor)
-        gov_interval = 0.50
-        candidates.append(("normal_scene", (now - self._last_run_time["normal_scene"]) / gov_interval, 1.0))
+        # Skipped during ALERT: the scene is clearly not normal, and the GPU time
+        # is better spent confirming the emergency.
+        if scene_state != SceneState.ALERT:
+            gov_interval = 0.50
+            candidates.append(("normal_scene", (now - self._last_run_time["normal_scene"]) / gov_interval, 1.0))
 
         if scene_state == SceneState.ALERT:
-            # High frequency for active emergency verification
-            candidates.append(("fire", (now - self._last_run_time["fire"]) / 0.10, 1.2))
+            # Elevated frequency for emergency verification. Kept moderate so the
+            # specialists don't saturate the GPU and starve the primary
+            # detector/tracker — that starvation is what made video stutter
+            # exactly when an incident (e.g. fire) appeared.
+            candidates.append(("fire", (now - self._last_run_time["fire"]) / 0.15, 1.2))
             if num_persons > 0:
-                candidates.append(("weapon", (now - self._last_run_time["weapon"]) / 0.10, 1.3))
-                candidates.append(("pose", (now - self._last_run_time["pose"]) / 0.15, 1.1))
+                candidates.append(("weapon", (now - self._last_run_time["weapon"]) / 0.20, 1.3))
+                candidates.append(("pose", (now - self._last_run_time["pose"]) / 0.20, 1.1))
             if num_persons >= 2:
-                candidates.append(("violence", (now - self._last_run_time["violence"]) / 0.15, 1.0))
+                candidates.append(("violence", (now - self._last_run_time["violence"]) / 0.25, 1.0))
 
         elif scene_state == SceneState.SUSPICIOUS:
             # Medium frequency
@@ -323,7 +331,7 @@ class SpecialistWorker:
 
         else:
             # NORMAL scene: Heartbeat mode (saves GPU compute while keeping all detectors active)
-            candidates.append(("fire", (now - self._last_run_time["fire"]) / 0.33, 1.1))  # ~3 FPS heartbeat
+            candidates.append(("fire", (now - self._last_run_time["fire"]) / 0.20, 1.2))  # ~5 FPS heartbeat — catch fire from its first frames
             if num_persons > 0:
                 candidates.append(("pose", (now - self._last_run_time["pose"]) / 0.25, 1.1))    # ~4 FPS
                 candidates.append(("weapon", (now - self._last_run_time["weapon"]) / 0.33, 1.0))  # ~3 FPS
