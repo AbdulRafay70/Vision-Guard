@@ -203,7 +203,7 @@ BIKE_VELOCITY_DROP_THRESHOLD = 10.0
 FIGHT_PROXIMITY_THRESHOLD = 200       # Pixels — physical contact distance (balanced for portrait/landscape video)
 FIGHT_ARM_VELOCITY_THRESHOLD = 16.0  # px/frame arm movement speed (calibrated from 12.0)
 FIGHT_MIN_PERSONS = 2
-FIGHT_MIN_DURATION_SECONDS = 3.5     # Must persist 3.5s (raised to filter transient crowd false positives)
+FIGHT_MIN_DURATION_SECONDS = 1.5     # Recurrence gate in FightDetector filters transient contact; 3.5s reported fights far too late
 
 # Violence Classifier (Day 2 — neural fight verification)
 VIOLENCE_CONF_THRESHOLD = 0.70       # Min classifier confidence to confirm violence (raised to reduce false positives)

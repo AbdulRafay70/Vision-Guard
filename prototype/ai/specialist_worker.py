@@ -316,7 +316,7 @@ class SpecialistWorker:
             candidates.append(("fire", (now - self._last_run_time["fire"]) / 0.15, 1.2))
             if num_persons > 0:
                 candidates.append(("weapon", (now - self._last_run_time["weapon"]) / 0.20, 1.3))
-                candidates.append(("pose", (now - self._last_run_time["pose"]) / 0.20, 1.1))
+                candidates.append(("pose", (now - self._last_run_time["pose"]) / 0.15, 1.15))
             if num_persons >= 2:
                 candidates.append(("violence", (now - self._last_run_time["violence"]) / 0.25, 1.0))
 
@@ -325,7 +325,7 @@ class SpecialistWorker:
             candidates.append(("fire", (now - self._last_run_time["fire"]) / 0.20, 1.1))
             if num_persons > 0:
                 candidates.append(("weapon", (now - self._last_run_time["weapon"]) / 0.15, 1.2))
-                candidates.append(("pose", (now - self._last_run_time["pose"]) / 0.20, 1.1))
+                candidates.append(("pose", (now - self._last_run_time["pose"]) / 0.15, 1.15))
             if num_persons >= 2:
                 candidates.append(("violence", (now - self._last_run_time["violence"]) / 0.25, 1.0))
 
@@ -333,7 +333,7 @@ class SpecialistWorker:
             # NORMAL scene: Heartbeat mode (saves GPU compute while keeping all detectors active)
             candidates.append(("fire", (now - self._last_run_time["fire"]) / 0.20, 1.2))  # ~5 FPS heartbeat — catch fire from its first frames
             if num_persons > 0:
-                candidates.append(("pose", (now - self._last_run_time["pose"]) / 0.25, 1.1))    # ~4 FPS
+                candidates.append(("pose", (now - self._last_run_time["pose"]) / 0.15, 1.15))   # ~6 FPS — smoother skeletons & strike tracking
                 candidates.append(("weapon", (now - self._last_run_time["weapon"]) / 0.33, 1.0))  # ~3 FPS
             else:
                 # Periodic safety sweep even without detected persons
