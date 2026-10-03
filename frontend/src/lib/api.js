@@ -59,6 +59,12 @@ export const api = {
     return request('/api/cameras/upload-test-video', { method: 'POST', body: fd });
   },
 
+  // camera access / consent
+  accessBases: () => request('/api/access/bases'),
+  cameraAccess: (id) => request(`/api/cameras/${enc(id)}/access`),
+  setAccess: (id, access) => send('PUT', `/api/cameras/${enc(id)}/access`, access),
+  revokeAccess: (id) => send('POST', `/api/cameras/${enc(id)}/access/revoke`),
+
   // recorders & network cameras
   deviceBrands: () => request('/api/devices/brands'),
   devices: () => request('/api/devices'),

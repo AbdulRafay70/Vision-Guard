@@ -55,6 +55,27 @@ are retried automatically (15 s backoff, up to 5 min).
 Roles: **Super Admin** (everything), **Supervisor** (cameras, locations, audit), **Tactical Operator**
 (start/stop cameras, incidents), **Security Analyst** (incidents), **Viewer** (read-only).
 
+## Lawful access & consent
+
+This system is for cameras the agency **owns or is authorised to use** — not for connecting to other
+people's private cameras without their knowledge. Every camera must carry a recorded **lawful basis for
+access**, chosen when it is added:
+
+- **Agency-owned camera**
+- **Owner consent on file** (records the owner's name and a consent-form reference)
+- **Agreement / MoU with operator** (owner name + reference)
+- **Court order / legal authorisation** (authorisation/order number)
+- **Publicly broadcast / open stream**
+- **Demo / test footage** (set automatically for the bundled clips)
+
+The basis is shown in the registry's **Access** column and stored in the `access_grants` table with who
+recorded it and when. An administrator can **revoke** access on any camera (**Camera registry → shield
+icon → Revoke**): the stream stops immediately and stays blocked until access is re-granted. Grants and
+revocations are written to the audit log. A camera with no recorded basis is flagged *Unverified*.
+
+To verify the pipeline without a private camera, use **Connect camera → Stream URL → public test stream**
+(two open test feeds are provided), or paste a publicly broadcast stream URL you are entitled to use.
+
 ## Connecting DVRs, NVRs and WiFi cameras
 
 **Connect camera → Camera or DVR / NVR (auto-detect)**: choose *Standalone IP / WiFi camera* or

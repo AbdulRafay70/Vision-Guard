@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Check, CircleAlert, Upload, Radio } from '../components/Icons';
+import AccessFields from '../components/AccessFields';
 
 const TYPES = [
   { id: 'rtsp', label: 'IP camera (RTSP / HTTP)', hint: 'rtsp://user:pass@10.0.0.21:554/stream1' },
@@ -10,12 +11,20 @@ const TYPES = [
 
 export const NEW = '__new__';
 
+// Publicly broadcast sample streams for verifying the pipeline end-to-end without
+// a private camera. These are open/public test feeds — access basis 'public'.
+const PUBLIC_STREAMS = [
+  { name: 'Public test stream — Big Buck Bunny (RTSP)', type: 'rtsp', source: 'rtsp://rtspstream.bapi.us/live/bunny' },
+  { name: 'Public test pattern (HLS)', type: 'rtsp', source: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8' },
+];
+
 export function ManualConnect({ registry, onConnected, notify }) {
   const [cityId, setCityId] = useState(registry.cities[0]?.id || '');
   const [areaId, setAreaId] = useState('');
   const [streetId, setStreetId] = useState('');
   const [newName, setNewName] = useState({ city: '', area: '', street: '' });
 
+  const [access, setAccess] = useState({ basis: '' });
   const [type, setType] = useState('rtsp');
   const [name, setName] = useState('');
   const [camId, setCamId] = useState('');
@@ -71,6 +80,7 @@ export function ManualConnect({ registry, onConnected, notify }) {
     setMsg(null);
     if (!name.trim()) { setMsg({ ok: false, text: 'Enter a camera name.' }); return; }
     if (!String(source).trim()) { setMsg({ ok: false, text: 'Enter the camera source.' }); return; }
+    if (!access.basis) { setMsg({ ok: false, text: 'Record the lawful basis for accessing this camera.' }); return; }
     setBusy('connect');
     try {
       const location = await resolveLocation();
@@ -80,6 +90,7 @@ export function ManualConnect({ registry, onConnected, notify }) {
         type,
         source: type === 'webcam' ? Number(source) : source.trim(),
         location,
+        access,
       });
       await registry.reload();
       onConnected(res.id);
@@ -89,7 +100,7 @@ export function ManualConnect({ registry, onConnected, notify }) {
       } else {
         setMsg({ ok: false, text: `${res.name} was saved but is not streaming yet: ${res.status_message || res.status}. The server keeps retrying automatically.` });
       }
-      setName(''); setCamId(''); setSource(''); setTest(null);
+      setName(''); setCamId(''); setSource(''); setTest(null); setAccess({ basis: '' });
     } catch (err) {
       setMsg({ ok: false, text: err.message });
     }
@@ -135,10 +146,23 @@ export function ManualConnect({ registry, onConnected, notify }) {
               <input type="file" accept="video/*" onChange={(e) => upload(e.target.files?.[0])} hidden />
             </label>
           )}
+          <div className="public-streams">
+            <span className="muted small">Or use a public test stream:</span>
+            {PUBLIC_STREAMS.map((ps) => (
+              <button type="button" key={ps.name} className="chip" onClick={() => {
+                setType(ps.type); setSource(ps.source); if (!name) setName(ps.name); setAccess({ basis: 'public', note: 'Public test stream' }); setTest(null);
+              }}>{ps.name}</button>
+            ))}
+          </div>
         </fieldset>
 
         <fieldset className="panel form-section">
-          <legend><span className="step">3</span>Verify and connect</legend>
+          <legend><span className="step">3</span>Access authorisation</legend>
+          <AccessFields value={access} onChange={setAccess} />
+        </fieldset>
+
+        <fieldset className="panel form-section">
+          <legend><span className="step">4</span>Verify and connect</legend>
           <div className="form-actions">
             <button type="button" className="btn btn-ghost" disabled={!source || busy} onClick={runTest}>
               <Radio size={15} /> {busy === 'test' ? 'Testing…' : 'Test connection'}

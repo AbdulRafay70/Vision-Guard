@@ -4,7 +4,8 @@ import { inScope } from '../lib/registry';
 import { can } from '../lib/roles';
 import { locationOptions, placementKey } from '../lib/locations';
 import Modal from '../components/Modal';
-import { Plus, Trash2, Pin, PinOff, Power, Play, RefreshCw, MonitorPlay, Building2, Map, Signpost, Pencil } from '../components/Icons';
+import { Plus, Trash2, Pin, PinOff, Power, Play, RefreshCw, MonitorPlay, Building2, Map, Signpost, Pencil, ShieldAlert } from '../components/Icons';
+import AccessFields, { BASIS_TAG } from '../components/AccessFields';
 
 const STATUS = {
   online: ['tag-live', 'Streaming'],
@@ -18,6 +19,7 @@ export default function Registry({ user, cameras, registry, pinned, togglePin, f
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [accessCam, setAccessCam] = useState(null);
   const admin = can.manageCameras(user);
   const operator = can.operateCameras(user);
 
@@ -119,7 +121,7 @@ export default function Registry({ user, cameras, registry, pinned, togglePin, f
         <div className="table-wrap">
           <table className="table">
             <thead>
-              <tr><th>#</th><th>Camera</th><th>Type</th><th>Location</th><th>Status</th><th className="num">FPS</th><th className="num">Latency</th><th /></tr>
+              <tr><th>#</th><th>Camera</th><th>Type</th><th>Location</th><th>Access</th><th>Status</th><th className="num">FPS</th><th className="num">Latency</th><th /></tr>
             </thead>
             <tbody>
               {rows.map((c) => {
@@ -140,6 +142,13 @@ export default function Registry({ user, cameras, registry, pinned, togglePin, f
                       </select>
                     </td>
                     <td>
+                      {c.access ? (
+                        <span className={`tag ${c.access.revoked ? 'tag-bad' : BASIS_TAG[c.access.basis] || 'tag-off'}`} title={[c.access.basis_label, c.access.owner_name, c.access.reference].filter(Boolean).join(' · ')}>
+                          {c.access.revoked ? 'Revoked' : c.access.basis_label}
+                        </span>
+                      ) : <span className="tag tag-warn" title="No lawful basis recorded">Unverified</span>}
+                    </td>
+                    <td>
                       <span className={`tag ${cls}`}>{label}</span>
                       {c.status !== 'online' && c.status_message && <div className="small muted ellipsis" title={c.status_message}>{c.status_message}</div>}
                     </td>
@@ -158,18 +167,20 @@ export default function Registry({ user, cameras, registry, pinned, togglePin, f
                       {operator && c.enabled && c.status === 'error' && (
                         <button className="icon-btn" title="Retry now" disabled={busy === c.id} onClick={() => act(c.id, () => cameraAction('start', c.id))}><RefreshCw size={15} /></button>
                       )}
+                      {admin && <button className="icon-btn" title="Access authorisation" onClick={() => setAccessCam(c)}><ShieldAlert size={15} /></button>}
                       {admin && <button className="icon-btn" title="Edit" onClick={() => setEditing(c)}><Pencil size={15} /></button>}
                       {admin && <button className="icon-btn danger" title="Delete" disabled={busy === c.id} onClick={() => remove(c)}><Trash2 size={15} /></button>}
                     </td>
                   </tr>
                 );
               })}
-              {rows.length === 0 && <tr><td colSpan={8} className="empty-line">No cameras match this selection.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={9} className="empty-line">No cameras match this selection.</td></tr>}
             </tbody>
           </table>
         </div>
       </section>
       {editing && <EditCamera camera={editing} onClose={() => setEditing(null)} onSaved={async (msg) => { setEditing(null); notify(msg); await onRefresh(); }} />}
+      {accessCam && <AccessModal camera={accessCam} onClose={() => setAccessCam(null)} onSaved={async (msg) => { setAccessCam(null); notify(msg); await onRefresh(); }} notify={notify} />}
     </div>
   );
 }
@@ -238,5 +249,39 @@ function Column({ icon: Icon, title, items, selected, onSelect, onAdd, onRename,
         </form>
       )}
     </div>
+  );
+}
+
+function AccessModal({ camera, onClose, onSaved, notify }) {
+  const [value, setValue] = useState({ basis: '' });
+  const [loaded, setLoaded] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.cameraAccess(camera.id).then((g) => { setLoaded(g); if (g && g.basis) setValue(g); }).catch(() => {});
+  }, [camera.id]);
+
+  const save = async () => {
+    setBusy(true);
+    try { await api.setAccess(camera.id, value); await onSaved(`Access basis saved for ${camera.name}.`); } catch (e) { notify(e.message, 'bad'); setBusy(false); }
+  };
+  const revoke = async () => {
+    if (!window.confirm(`Revoke access to ${camera.name}? The stream stops immediately and stays blocked until access is re-granted.`)) return;
+    setBusy(true);
+    try { await api.revokeAccess(camera.id); await onSaved(`Access to ${camera.name} revoked — stream blocked.`); } catch (e) { notify(e.message, 'bad'); setBusy(false); }
+  };
+
+  return (
+    <Modal title={`Access authorisation · ${camera.name}`} onClose={onClose} wide
+      footer={<>
+        {loaded && loaded.basis && !loaded.revoked && <button className="btn btn-ghost danger" disabled={busy} onClick={revoke}>Revoke access</button>}
+        <div className="spacer" />
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" disabled={busy || !value.basis} onClick={save}>{loaded?.revoked ? 'Re-grant access' : 'Save'}</button>
+      </>}>
+      {loaded?.revoked && <div className="notice notice-error"><ShieldAlert size={16} />Access was revoked by {loaded.revoked_by} on {loaded.revoked_at}. Saving a basis re-grants access and allows the stream to resume.</div>}
+      {loaded && loaded.granted_by && <p className="muted small">Recorded by {loaded.granted_by} on {loaded.granted_at}.</p>}
+      <AccessFields value={value} onChange={setValue} />
+    </Modal>
   );
 }

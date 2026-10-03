@@ -35,7 +35,7 @@ from events.engine import EventEngine, EVENT_EMOJI
 from events.base import EventAlert
 from output.evidence import EvidencePackageGenerator
 
-from web.console_db import ConsoleDatabase, CAMERA_ADMIN_ROLES
+from web.console_db import ConsoleDatabase, CAMERA_ADMIN_ROLES, ACCESS_BASES
 from web.console_api import build_router, install_auth_middleware, current_user, require_role, client_ip
 
 logger = logging.getLogger(__name__)
@@ -703,6 +703,11 @@ def start_camera(cam_id: str) -> bool:
     cfg = config.CAMERAS.get(cam_id)
     if not cfg:
         return False
+    grant = console_db.get_access(cam_id)
+    if grant and grant.get("revoked"):
+        stop_camera(cam_id)
+        _set_cam_status(cam_id, "revoked", "Access revoked — stream blocked")
+        return False
     with state.camera_lock(cam_id):
         stop_camera(cam_id)
         _set_cam_status(cam_id, "connecting", "Opening stream…")
@@ -786,9 +791,13 @@ def _camera_json(cam_id: str, full_source: bool = False) -> dict:
         msg = h.get("last_error") or (f"Streaming via {str(h.get('transport') or '').upper()} {res[0]}×{res[1]}" if mapped == "online" else "Connecting…")
         st = {**st, "state": mapped, "message": msg}
     device = console_db.camera_devices().get(cam_id)
+    access = console_db.grants().get(cam_id)
+    if access and access.get("revoked") and not pipeline:
+        st = {**st, "state": "revoked", "message": f"Access revoked by {access.get('revoked_by') or 'an administrator'}"}
     source = str(cfg.get("source", ""))
     return {
         "device": device,
+        "access": access,
         "link": link,
         "id": cam_id,
         "name": cfg.get("name", cam_id),
@@ -888,11 +897,17 @@ async def connect_camera(request: Request):
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
+    try:
+        access = console_db.validate_access(data.get("access"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     config.CAMERAS[cam_id] = {"id": cam_id, **fields, "sector": sector or "", "enabled": True}
     _persist_camera(cam_id)
+    console_db.set_access(cam_id, access, user["username"])
     ok = await asyncio.to_thread(start_camera, cam_id)
     console_db.audit(user["username"], "camera_connected", target=cam_id,
-                     detail=f"{fields['type']} {_mask_source(fields['source'])} — {'online' if ok else 'failed, will retry'}",
+                     detail=f"basis={access['basis']} {fields['type']} {_mask_source(fields['source'])} — {'online' if ok else 'failed, will retry'}",
                      ip=client_ip(request))
     return JSONResponse({"status": "connected" if ok else "saved", **_camera_json(cam_id)}, status_code=201)
 
@@ -960,6 +975,7 @@ async def delete_camera(camera_id: str, request: Request):
     state.incident_db.delete_system_camera(camera_id)
     console_db.unplace_camera(camera_id)
     console_db.unlink_camera(camera_id)
+    console_db.clear_access(camera_id)
     console_db.audit(user["username"], "camera_deleted", target=camera_id, ip=client_ip(request))
     return JSONResponse({"status": "deleted", "id": camera_id})
 
@@ -1206,6 +1222,7 @@ async def deploy_demo_videos(request: Request):
             "sector": console_db.area_name(area_id) or area_name, "enabled": True,
         }
         _persist_camera(cam_id)
+        console_db.set_access(cam_id, {"basis": "demo", "note": "Bundled sample footage"}, user["username"])
         ok = cam_id in state.pipelines and state.camera_status.get(cam_id, {}).get("state") == "online"
         if not ok:
             ok = await asyncio.to_thread(start_camera, cam_id)
@@ -1334,6 +1351,10 @@ async def add_device(request: Request):
     loc = data.get("location") or {}
     if not loc.get("areaId"):
         raise HTTPException(status_code=400, detail="Choose the area where this device is installed")
+    try:
+        access = console_db.validate_access(data.get("access"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     device = console_db.save_device(
         name=str(dev.get("name") or (f"DVR {ip}" if kind == "dvr" else f"Camera {ip}")).strip()[:120],
@@ -1360,6 +1381,7 @@ async def add_device(request: Request):
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         console_db.link_camera(cam_id, device["id"], ch)
+        console_db.set_access(cam_id, access, user["username"])
         created.append(cam_id)
 
     # Start all channels in parallel (each source connects and self-heals in its own thread)
@@ -1367,8 +1389,60 @@ async def add_device(request: Request):
     cams = [_camera_json(cid) for cid in created]
     online = sum(1 for c in cams if c["status"] == "online")
     console_db.audit(user["username"], "device_added", target=device["id"],
-                     detail=f"{kind} {ip}: {online}/{len(cams)} channels online", ip=client_ip(request))
+                     detail=f"basis={access['basis']} {kind} {ip}: {online}/{len(cams)} channels online", ip=client_ip(request))
     return JSONResponse({"device": device, "cameras": cams, "online": online}, status_code=201)
+
+
+@app.get("/api/access/bases")
+async def access_bases(request: Request):
+    """Lawful bases a camera's access can be recorded under."""
+    current_user(request)
+    from web.console_db import BASES_NEEDING_OWNER, BASES_NEEDING_REFERENCE
+    return JSONResponse([
+        {"id": k, "label": v, "needs_owner": k in BASES_NEEDING_OWNER, "needs_reference": k in BASES_NEEDING_REFERENCE}
+        for k, v in ACCESS_BASES.items()
+    ])
+
+
+@app.get("/api/cameras/{camera_id}/access")
+async def get_camera_access(camera_id: str, request: Request):
+    current_user(request)
+    if camera_id not in config.CAMERAS:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    return JSONResponse(console_db.get_access(camera_id) or {})
+
+
+@app.put("/api/cameras/{camera_id}/access")
+async def set_camera_access(camera_id: str, request: Request):
+    """Record / update the lawful basis for accessing this camera."""
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    if camera_id not in config.CAMERAS:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    data = await _json_body(request)
+    try:
+        grant = console_db.set_access(camera_id, data, user["username"])
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # Re-granting access to a previously revoked camera lets it stream again
+    if config.CAMERAS[camera_id].get("enabled"):
+        await asyncio.to_thread(start_camera, camera_id)
+    console_db.audit(user["username"], "access_granted", target=camera_id,
+                     detail=f"basis={grant['basis']} ref={grant.get('reference') or '—'}", ip=client_ip(request))
+    return JSONResponse(grant)
+
+
+@app.post("/api/cameras/{camera_id}/access/revoke")
+async def revoke_camera_access(camera_id: str, request: Request):
+    """Withdraw access: the camera stops streaming and is blocked until re-granted."""
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    if camera_id not in config.CAMERAS:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    if not console_db.revoke_access(camera_id, user["username"]):
+        raise HTTPException(status_code=400, detail="No active access grant to revoke")
+    stop_camera(camera_id)
+    _set_cam_status(camera_id, "revoked", f"Access revoked by {user['username']}")
+    console_db.audit(user["username"], "access_revoked", target=camera_id, ip=client_ip(request))
+    return JSONResponse(_camera_json(camera_id))
 
 
 @app.delete("/api/devices/{device_id}")
@@ -1382,6 +1456,7 @@ async def delete_device(device_id: str, request: Request):
         state.camera_status.pop(cid, None)
         state.incident_db.delete_system_camera(cid)
         console_db.unplace_camera(cid)
+        console_db.clear_access(cid)
     console_db.audit(user["username"], "device_deleted", target=device_id, detail=f"{len(cams)} cameras removed", ip=client_ip(request))
     return JSONResponse({"status": "deleted", "cameras": cams})
 

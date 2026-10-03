@@ -126,3 +126,35 @@ def test_voice_log(setup):
     client.post("/api/voice/log", headers=h, json={"text": "show camera 2", "action": "focus", "response": "Showing."})
     log = client.get("/api/voice/log", headers=h).json()
     assert log[0]["text"] == "show camera 2" and log[0]["source"] == "console"
+
+
+def test_access_grant_required_and_validated(setup):
+    db, _ = setup
+    # Basis is mandatory
+    import pytest as _pt
+    with _pt.raises(ValueError):
+        db.validate_access({})
+    # Consent needs owner + reference
+    with _pt.raises(ValueError):
+        db.validate_access({"basis": "consent", "owner_name": "Shop"})
+    with _pt.raises(ValueError):
+        db.validate_access({"basis": "consent", "reference": "CF-1"})
+    ok = db.validate_access({"basis": "consent", "owner_name": "Shop", "reference": "CF-1"})
+    assert ok["basis"] == "consent"
+    # Owned / public need neither
+    assert db.validate_access({"basis": "public"})["basis"] == "public"
+
+
+def test_access_set_revoke_and_restore(setup):
+    db, _ = setup
+    db.set_access("cam_x", {"basis": "consent", "owner_name": "Bank", "owner_contact": "021-111", "reference": "MOU-9"}, "admin")
+    g = db.get_access("cam_x")
+    assert g["basis"] == "consent" and g["owner_name"] == "Bank" and not g["revoked"]
+    assert g["basis_label"] == "Owner consent on file"
+    assert db.revoke_access("cam_x", "admin") is True
+    assert db.get_access("cam_x")["revoked"] is True
+    # Re-granting clears the revocation
+    db.set_access("cam_x", {"basis": "owned"}, "admin")
+    assert db.get_access("cam_x")["revoked"] is False
+    assert "cam_x" in db.grants()
+

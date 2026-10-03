@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { ManualConnect, LevelSelect, NEW } from './ConnectCamera';
 import { Check, CircleAlert, Radio, Search, Trash2, RefreshCw } from '../components/Icons';
+import AccessFields from '../components/AccessFields';
 
 const STEPS = ['Checking network ports', 'Asking the device over ONVIF', 'Trying stream paths', 'Grabbing a live frame from each stream'];
 
@@ -37,6 +38,7 @@ function DeviceWizard({ registry, onConnected, notify }) {
   const [names, setNames] = useState({});
   const [devName, setDevName] = useState('');
   const [loc, setLoc] = useState({ cityId: '', areaId: '', streetId: '' });
+  const [access, setAccess] = useState({ basis: '' });
   const [newName, setNewName] = useState({ city: '', area: '', street: '' });
   const [result, setResult] = useState(null);
 
@@ -77,6 +79,7 @@ function DeviceWizard({ registry, onConnected, notify }) {
   const add = async () => {
     if (!chosen.length) { notify('Select at least one channel.', 'bad'); return; }
     if (!loc.cityId || !loc.areaId) { notify('Choose the city and area where the device is installed.', 'bad'); return; }
+    if (!access.basis) { notify('Record the lawful basis for accessing this device.', 'bad'); return; }
     setBusy('add');
     try {
       // Create any new locations first
@@ -87,6 +90,7 @@ function DeviceWizard({ registry, onConnected, notify }) {
         device: { name: devName, kind: form.kind, brand: probe.brand, model: probe.model, ip: form.ip.trim(), username: form.username },
         streams: chosen.map((st) => ({ channel: st.channel, url: st.url, name: names[st.channel] || undefined })),
         location: { cityId: c, areaId: a, ...(s ? { streetId: s } : {}) },
+        access,
       });
       await registry.reload();
       res.cameras.forEach((cam) => onConnected(cam.id));
@@ -219,6 +223,7 @@ function DeviceWizard({ registry, onConnected, notify }) {
             <LevelSelect label="Street" value={loc.streetId} onChange={(v) => setLoc((l) => ({ ...l, streetId: v }))} disabled={!loc.areaId} optional items={area?.streets || []}
               newLabel="New street…" newValue={newName.street} onNewValue={(v) => setNewName((n) => ({ ...n, street: v }))} />
           </div>
+          <div className="access-block"><AccessFields value={access} onChange={setAccess} /></div>
           <div className="form-actions">
             <div className="spacer" />
             <button className="btn btn-primary" disabled={busy === 'add' || !chosen.length} onClick={add}>

@@ -38,6 +38,18 @@ USER_ADMIN_ROLES = {"Super Admin"}
 # Roles allowed to acknowledge / resolve incidents
 INCIDENT_ROLES = {"Super Admin", "Supervisor", "Tactical Operator", "Security Analyst"}
 
+# Lawful basis on which a camera's feed may be accessed. Every camera must carry one.
+ACCESS_BASES = {
+    "owned": "Agency-owned camera",
+    "consent": "Owner consent on file",
+    "mou": "Agreement / MoU with operator",
+    "warrant": "Court order / legal authorisation",
+    "public": "Publicly broadcast / open stream",
+    "demo": "Demo / test footage",
+}
+BASES_NEEDING_OWNER = {"consent", "mou"}
+BASES_NEEDING_REFERENCE = {"consent", "mou", "warrant"}
+
 DEFAULT_AREAS = ["Saddar", "Clifton", "Gulshan", "Nazimabad", "Orangi", "Lyari", "DHA", "Jauhar"]
 
 USER_FIELDS = ["username", "full_name", "email", "role", "department", "access_level", "status",
@@ -197,6 +209,18 @@ class ConsoleDatabase:
                     camera_id TEXT PRIMARY KEY,
                     device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
                     channel INTEGER NOT NULL DEFAULT 1
+                );
+                CREATE TABLE IF NOT EXISTS access_grants (
+                    camera_id TEXT PRIMARY KEY,
+                    basis TEXT NOT NULL,
+                    owner_name TEXT,
+                    owner_contact TEXT,
+                    reference TEXT,
+                    note TEXT,
+                    granted_by TEXT,
+                    granted_at TEXT NOT NULL,
+                    revoked_by TEXT,
+                    revoked_at TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
                 CREATE INDEX IF NOT EXISTS idx_voice_created ON voice_log(created_at);
@@ -493,6 +517,57 @@ class ConsoleDatabase:
         cams = [r["camera_id"] for r in self._all("SELECT camera_id FROM device_cameras WHERE device_id = ?", (device_id,))]
         self._exec("DELETE FROM devices WHERE id = ?", (device_id,))
         return cams
+
+    # ── access grants (lawful basis for each camera) ───────────────────
+    def validate_access(self, access: Dict[str, Any]) -> Dict[str, Any]:
+        basis = str((access or {}).get("basis") or "").strip()
+        if basis not in ACCESS_BASES:
+            raise ValueError("Select the lawful basis for accessing this camera.")
+        owner = str((access or {}).get("owner_name") or "").strip()
+        ref = str((access or {}).get("reference") or "").strip()
+        if basis in BASES_NEEDING_OWNER and not owner:
+            raise ValueError("Record the camera owner's name for a consent / agreement basis.")
+        if basis in BASES_NEEDING_REFERENCE and not ref:
+            raise ValueError("Record the authorisation reference (consent form, MoU or order number).")
+        return {
+            "basis": basis,
+            "owner_name": owner,
+            "owner_contact": str((access or {}).get("owner_contact") or "").strip(),
+            "reference": ref,
+            "note": str((access or {}).get("note") or "").strip(),
+        }
+
+    def set_access(self, camera_id: str, access: Dict[str, Any], granted_by: str):
+        a = self.validate_access(access)
+        self._exec("""INSERT INTO access_grants (camera_id, basis, owner_name, owner_contact, reference, note, granted_by, granted_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                      ON CONFLICT(camera_id) DO UPDATE SET basis=excluded.basis, owner_name=excluded.owner_name,
+                        owner_contact=excluded.owner_contact, reference=excluded.reference, note=excluded.note,
+                        granted_by=excluded.granted_by, granted_at=excluded.granted_at, revoked_by=NULL, revoked_at=NULL""",
+                   (camera_id, a["basis"], a["owner_name"], a["owner_contact"], a["reference"], a["note"], granted_by, _now()))
+        return self.get_access(camera_id)
+
+    def get_access(self, camera_id: str) -> Optional[Dict[str, Any]]:
+        row = self._one("SELECT * FROM access_grants WHERE camera_id = ?", (camera_id,))
+        if row:
+            row["basis_label"] = ACCESS_BASES.get(row["basis"], row["basis"])
+            row["revoked"] = bool(row.get("revoked_at"))
+        return row
+
+    def grants(self) -> Dict[str, Dict[str, Any]]:
+        out = {}
+        for r in self._all("SELECT * FROM access_grants"):
+            r["basis_label"] = ACCESS_BASES.get(r["basis"], r["basis"])
+            r["revoked"] = bool(r.get("revoked_at"))
+            out[r["camera_id"]] = r
+        return out
+
+    def revoke_access(self, camera_id: str, revoked_by: str) -> bool:
+        return self._exec("UPDATE access_grants SET revoked_by = ?, revoked_at = ? WHERE camera_id = ? AND revoked_at IS NULL",
+                          (revoked_by, _now(), camera_id)).rowcount > 0
+
+    def clear_access(self, camera_id: str):
+        self._exec("DELETE FROM access_grants WHERE camera_id = ?", (camera_id,))
 
     # ── preferences ────────────────────────────────────────────────────
     def get_preferences(self, username: str) -> Dict[str, Any]:
