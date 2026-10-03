@@ -102,3 +102,6 @@ Desktop.ini
 # Log Files
 *.log
 logs/
+
+# Python "lib/" rule above must not hide the frontend source folder
+!frontend/src/lib/

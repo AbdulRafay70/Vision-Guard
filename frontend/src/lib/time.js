@@ -9,20 +9,12 @@ export function useClock(intervalMs = 1000) {
   return now;
 }
 
-const toDate = (v) => (v instanceof Date ? v : new Date(v));
+const pad = (n) => String(n).padStart(2, '0');
+export const fmtTime = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+export const fmtDate = (d) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
 
-export const fmtTime = (d) => toDate(d).toLocaleTimeString('en-GB', { hour12: false });
-
-export const fmtDate = (d) =>
-  toDate(d).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
-
-// Backend timestamps are Unix seconds (time.time()); client ones are ms.
 export function fmtAlertTime(ts) {
-  if (ts == null) return '';
-  let v = ts;
-  if (typeof v === 'number' && v < 1e12) v *= 1000;
-  const d = toDate(v);
-  if (Number.isNaN(d.getTime())) return String(ts);
-  const sameDay = d.toDateString() === new Date().toDateString();
-  return sameDay ? fmtTime(d) : `${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} ${fmtTime(d)}`;
+  if (!ts) return '—';
+  const d = typeof ts === 'number' ? new Date(ts < 1e12 ? ts * 1000 : ts) : new Date(ts);
+  return Number.isNaN(d.getTime()) ? String(ts) : fmtTime(d);
 }

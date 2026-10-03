@@ -4,8 +4,9 @@ import { locationLabel } from '../lib/cameras';
 import { inScope } from '../lib/registry';
 import { fmtTime } from '../lib/time';
 import { Pin, Maximize2, Minimize2 } from '../components/Icons';
+import { can } from '../lib/roles';
 
-export default function Dashboard({ cameras, registry, pinned, togglePin, focusCamera, view, status, alerts, voiceLog, onNavigate }) {
+export default function Dashboard({ user, cameras, registry, pinned, togglePin, focusCamera, view, status, alerts, voiceLog, onNavigate, onLoadDemo }) {
   const wall = pinned.map((id) => cameras.find((c) => c.id === id)).filter(Boolean);
   const cols = wall.length <= 1 ? 1 : wall.length <= 4 ? 2 : wall.length <= 9 ? 3 : 4;
   const slots = Math.max(cols * cols, wall.length);
@@ -45,7 +46,10 @@ export default function Dashboard({ cameras, registry, pinned, togglePin, focusC
               <Pin size={20} />
               <p>No cameras on the wall yet.</p>
               <p className="muted small">Pin cameras from Live view or the registry, or say “add camera 1 to dashboard”.</p>
-              <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('live')}>Open live view</button>
+              <div className="row-gap">
+                <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('live')}>Open live view</button>
+                {can.manageCameras(user) && <button className="btn btn-primary btn-sm" onClick={onLoadDemo}>Stream demo footage</button>}
+              </div>
             </div>
           ) : (
             <div className="wall" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
@@ -103,7 +107,10 @@ export default function Dashboard({ cameras, registry, pinned, togglePin, focusC
                   <li>“Show Clifton cameras”</li>
                   <li>“Grid three by three”</li>
                   <li>“Add camera 1 to dashboard”</li>
-                  <li>“Zoom in” · “Full screen”</li>
+                  <li>“Zoom in” · “Full screen” · “Next page”</li>
+                  <li>“Stop camera 3” · “Start Boat Basin”</li>
+                  <li>“Open analytics” · “Confirm alert”</li>
+                  <li>“Load demo videos”</li>
                   <li>“What's going on?” · “System health”</li>
                 </ul>
               </div>

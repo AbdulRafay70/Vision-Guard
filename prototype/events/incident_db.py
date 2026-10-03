@@ -173,6 +173,18 @@ class SQLiteIncidentDatabase:
             rows = conn.execute("SELECT * FROM system_cameras WHERE enabled = 1").fetchall()
         return [dict(r) for r in rows]
 
+    def get_all_system_cameras(self) -> List[Dict[str, Any]]:
+        """Fetch every stored camera, including stopped (disabled) ones."""
+        with self._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM system_cameras ORDER BY created_at").fetchall()
+        return [dict(r) for r in rows]
+
+    def set_camera_enabled(self, cam_id: str, enabled: bool):
+        """Mark a stored camera as running (1) or stopped (0)."""
+        with self._get_connection() as conn:
+            conn.execute("UPDATE system_cameras SET enabled = ? WHERE id = ?", (1 if enabled else 0, cam_id))
+            conn.commit()
+
     def delete_system_camera(self, cam_id: str):
         """Remove a camera from SQLite database."""
         with self._get_connection() as conn:

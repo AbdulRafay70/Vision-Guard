@@ -167,13 +167,15 @@ class FightDetector(BaseEventDetector):
                 continue  # Only people in the close pair matter
             aggressive_poses += st["raised"]
             max_wrist_speed = max(max_wrist_speed, st["speed"])
-            hit = self._wrist_contact(pose, tracks_by_id)
+            # Contact only counts while the hand is moving (a landing punch), not
+            # a resting hand on a shoulder or two people standing side by side.
+            hit = self._wrist_contact(pose, tracks_by_id) if st["speed"] > 0.5 else 0
             contacts += hit
             # A punch is a fast wrist movement that travels *toward* the other
             # person (or lands on them). Speed alone also fires on equipment
             # handling, hose jitter, gesturing, etc. Pose is sampled only a few
             # times per second, so thresholds are modest.
-            is_strike = (st["speed"] > 1.0 and st["approach"] > 0.6) or hit
+            is_strike = (st["speed"] > 1.0 and st["approach"] > 0.3) or hit
             if is_strike:
                 strikers += 1
                 if st["fresh"]:
@@ -197,7 +199,11 @@ class FightDetector(BaseEventDetector):
         # Evidence of active fighting in this frame
         striking = strikers >= 1 or aggressive_poses >= 2 or \
             (aggressive_poses >= 1 and high_velocity_persons >= 1)
-        if not (striking or violence_confirmed or weapon_present):
+        # Temporal clip model (ai/action_recognizer.py): judges ~2s of motion
+        action_prob = getattr(analysis, "action_fight_prob", 0.0)
+        action_fight = action_prob >= config.FIGHT_ACTION_THRESHOLD
+
+        if not (striking or violence_confirmed or weapon_present or action_fight):
             return None
 
         return {
@@ -216,6 +222,9 @@ class FightDetector(BaseEventDetector):
             "weapon_names": weapon_names,
             "violence_confirmed": violence_confirmed,
             "violence_confidence": violence_confidence,
+            "action_prob": action_prob,
+            "action_fight": action_fight,
+            "action_clip_id": getattr(analysis, "action_clip_id", 0),
             "persons_involved": [close_pairs[0]["person1"], close_pairs[0]["person2"]],
         }
 
@@ -230,8 +239,19 @@ class FightDetector(BaseEventDetector):
 
         # Recurrence gate: one raised arm or one hug is not a fight.
         repeated_striking = striking_frames >= 4 and strike_frames >= 2
-        classifier_backed = violent_frames >= 2 and striking_frames >= 2
-        if not (repeated_striking or classifier_backed or latest.get("weapon_present")):
+        # The violence classifier alone is not trusted: it was observed scoring
+        # firefighters holding a hose as 100% violent. It must be backed by at
+        # least one real strike seen in the poses.
+        classifier_backed = violent_frames >= 2 and strike_frames >= 1
+        # Temporal clip evidence: distinct clips (not repeated cache reads) that
+        # the action model judged to be fighting. This is the primary signal —
+        # it sees motion over ~2s the way a human does.
+        fight_clips = {s.get("action_clip_id") for s in signal_window
+                       if s.get("action_fight") and s.get("action_clip_id")}
+        peak_action = max((s.get("action_prob", 0.0) for s in signal_window), default=0.0)
+        action_backed = len(fight_clips) >= 2 or (len(fight_clips) >= 1 and strike_frames >= 1)
+
+        if not (action_backed or repeated_striking or classifier_backed or latest.get("weapon_present")):
             return 0
 
         score = 15  # Close contact
@@ -249,6 +269,13 @@ class FightDetector(BaseEventDetector):
 
         if latest.get("weapon_present", False):
             score += 25
+
+        if fight_clips:
+            score += 25                      # Temporal model sees fighting motion
+            if len(fight_clips) >= 3:
+                score += 10
+            if peak_action >= 0.75:
+                score += 10
 
         if violent_frames:
             score += 20
@@ -276,6 +303,8 @@ class FightDetector(BaseEventDetector):
         if signals.get("violence_confirmed", False):
             conf = signals.get("violence_confidence", 0.0)
             violence_info = f" | 🧠 Neural-confirmed violence ({conf * 100:.0f}%)"
+        if signals.get("action_prob", 0.0) > 0:
+            violence_info += f" | 🎞️ Motion model: {signals['action_prob'] * 100:.0f}% fight"
         return (
             f"Street fight detected | "
             f"{signals['num_persons']} persons, {signals['close_pairs']} close pair(s) | "

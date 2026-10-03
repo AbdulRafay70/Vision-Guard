@@ -1,99 +1,60 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+// Location registry: City → Area → Street and camera placements, stored in the
+// backend database (/api/locations). Mutations write through and then reload.
+import { useCallback, useEffect, useState } from 'react';
+import { api } from './api';
 
-// Location hierarchy (City → Area → Street) and camera placements.
-// The backend has no notion of these, so they live in this browser's localStorage.
-const KEY = 'vg.registry';
+export function useRegistry(enabled = true) {
+  const [cities, setCities] = useState([]);
+  const [placements, setPlacements] = useState({});
+  const [error, setError] = useState('');
 
-const SEED = {
-  cities: [
-    {
-      id: 'khi', name: 'Karachi', areas: [
-        { id: 'khi-saddar', name: 'Saddar', streets: [] },
-        { id: 'khi-clifton', name: 'Clifton', streets: [] },
-      ],
-    },
-  ],
-  placements: {},
-};
+  const reload = useCallback(async () => {
+    try {
+      const data = await api.locations();
+      setCities(data.cities || []);
+      setPlacements(data.placements || {});
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    }
+  }, []);
 
-function load() {
-  try {
-    const v = JSON.parse(localStorage.getItem(KEY));
-    if (v && Array.isArray(v.cities) && v.placements) return v;
-  } catch { /* storage unavailable or corrupt */ }
-  return SEED;
+  useEffect(() => { if (enabled) reload(); }, [enabled, reload]);
+
+  const run = useCallback(async (fn) => {
+    const result = await fn();
+    await reload();
+    return result;
+  }, [reload]);
+
+  return {
+    cities,
+    placements,
+    error,
+    reload,
+    addCity: (name) => run(() => api.addCity(name)).then((n) => n.id),
+    addArea: (cityId, name) => run(() => api.addArea(cityId, name)).then((n) => n.id),
+    addStreet: (_cityId, areaId, name) => run(() => api.addStreet(areaId, name)).then((n) => n.id),
+    rename: (level, id, name) => run(() => api.renameLocation(level, id, name)),
+    removeNode: (level, ids) => run(() => api.deleteLocation(level, level === 'city' ? ids.cityId : level === 'area' ? ids.areaId : ids.streetId)),
+    place: (cameraId, p) => run(() => api.placeCamera(cameraId, p)),
+    unplace: (cameraId) => run(() => api.unplaceCamera(cameraId)),
+  };
 }
 
-const slug = (s) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'loc';
-const uid = (prefix, name) => `${prefix ? `${prefix}-` : ''}${slug(name)}-${Math.random().toString(36).slice(2, 6)}`;
+export function describePlacement(cities, p) {
+  if (!p) return { city: null, area: null, street: null };
+  const city = cities.find((c) => c.id === p.cityId);
+  const area = city?.areas.find((a) => a.id === p.areaId);
+  const street = area?.streets.find((s) => s.id === p.streetId);
+  return { city: city?.name ?? null, area: area?.name ?? null, street: street?.name ?? null };
+}
 
-const mapCity = (cities, cityId, fn) => cities.map((c) => (c.id === cityId ? fn(c) : c));
-const mapArea = (city, areaId, fn) => ({ ...city, areas: city.areas.map((a) => (a.id === areaId ? fn(a) : a)) });
-
-// A placement is in scope when it matches every level the scope specifies.
-export function inScope(placement, scope = {}) {
-  if (!scope.cityId) return true;
-  if (!placement) return false;
-  if (placement.cityId !== scope.cityId) return false;
-  if (scope.areaId && placement.areaId !== scope.areaId) return false;
-  if (scope.streetId && placement.streetId !== scope.streetId) return false;
+export function inScope(p, scope) {
+  if (!scope || !scope.cityId) return true;
+  if (!p) return false;
+  if (p.cityId !== scope.cityId) return false;
+  if (scope.areaId && p.areaId !== scope.areaId) return false;
+  if (scope.streetId && p.streetId !== scope.streetId) return false;
   return true;
-}
-
-export function useRegistry() {
-  const [data, setData] = useState(load);
-
-  useEffect(() => {
-    try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { /* storage unavailable */ }
-  }, [data]);
-
-  const addCity = useCallback((name) => {
-    const id = uid('', name);
-    setData((d) => ({ ...d, cities: [...d.cities, { id, name: name.trim(), areas: [] }] }));
-    return id;
-  }, []);
-
-  const addArea = useCallback((cityId, name) => {
-    const id = uid(cityId, name);
-    setData((d) => ({ ...d, cities: mapCity(d.cities, cityId, (c) => ({ ...c, areas: [...c.areas, { id, name: name.trim(), streets: [] }] })) }));
-    return id;
-  }, []);
-
-  const addStreet = useCallback((cityId, areaId, name) => {
-    const id = uid(areaId, name);
-    setData((d) => ({
-      ...d,
-      cities: mapCity(d.cities, cityId, (c) => mapArea(c, areaId, (a) => ({ ...a, streets: [...a.streets, { id, name: name.trim() }] }))),
-    }));
-    return id;
-  }, []);
-
-  const place = useCallback((cameraId, placement) => {
-    setData((d) => ({ ...d, placements: { ...d.placements, [cameraId]: placement } }));
-  }, []);
-
-  const unplace = useCallback((cameraId) => {
-    setData((d) => {
-      const placements = { ...d.placements };
-      delete placements[cameraId];
-      return { ...d, placements };
-    });
-  }, []);
-
-  // Removing a node unassigns every camera placed at or below it
-  const removeNode = useCallback((level, ids) => {
-    setData((d) => {
-      let cities = d.cities;
-      if (level === 'city') cities = cities.filter((c) => c.id !== ids.cityId);
-      else if (level === 'area') cities = mapCity(cities, ids.cityId, (c) => ({ ...c, areas: c.areas.filter((a) => a.id !== ids.areaId) }));
-      else cities = mapCity(cities, ids.cityId, (c) => mapArea(c, ids.areaId, (a) => ({ ...a, streets: a.streets.filter((s) => s.id !== ids.streetId) })));
-      const placements = Object.fromEntries(Object.entries(d.placements).filter(([, p]) => !inScope(p, ids)));
-      return { cities, placements };
-    });
-  }, []);
-
-  return useMemo(
-    () => ({ cities: data.cities, placements: data.placements, addCity, addArea, addStreet, place, unplace, removeNode }),
-    [data, addCity, addArea, addStreet, place, unplace, removeNode],
-  );
 }

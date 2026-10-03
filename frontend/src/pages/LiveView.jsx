@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import CameraTile from '../components/CameraTile';
 import LocationTree from '../components/LocationTree';
 import { inScope } from '../lib/registry';
@@ -13,7 +13,7 @@ const LAYOUTS = [
 ];
 
 export default function LiveView({ cameras, registry, pinned, togglePin, focusCamera, view }) {
-  const { scope, setScope, focusId, setFocusId, layout, setLayout, zoom, setZoom, theater, setTheater } = view;
+  const { scope, setScope, focusId, setFocusId, layout, setLayout, zoom, setZoom, theater, setTheater, pageStep } = view;
   // Paging resets whenever the scope or layout changes
   const pageKey = `${JSON.stringify(scope)}|${layout}|${focusId}`;
   const [paging, setPaging] = useState({ key: pageKey, idx: 0 });
@@ -27,6 +27,14 @@ export default function LiveView({ cameras, registry, pinned, togglePin, focusCa
   const list = layout === 1 && focused ? [focused] : visible;
   const pages = Math.max(1, Math.ceil(list.length / layout));
   const page = Math.min(pageIdx, pages - 1);
+
+  // Voice "next page" / "previous page" arrive as increments of pageStep
+  const lastStep = useRef(pageStep);
+  useEffect(() => {
+    const d = pageStep - lastStep.current;
+    lastStep.current = pageStep;
+    if (d) setPaging((pg) => ({ key: pageKey, idx: Math.max(0, Math.min(pages - 1, (pg.key === pageKey ? pg.idx : 0) + d)) }));
+  }, [pageStep, pageKey, pages]);
 
   const slots = Array.from({ length: layout }, (_, i) => list[page * layout + i] || null);
   const cols = Math.sqrt(layout);

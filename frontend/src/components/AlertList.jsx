@@ -18,7 +18,7 @@ export default function AlertList({ alerts, limit, empty = 'No alerts received t
         <li key={a.id} className={`alert tone-border-${levelTone(a.risk_level)}`}>
           <div className="alert-top">
             <span className={`tag tag-${levelTone(a.risk_level)}`}>{a.risk_level || 'Info'}</span>
-            <strong className="cap">{eventName(a.event_type)}</strong>
+            <strong className="cap">{eventName(a.event_type)}</strong>{a.simulated && <span className="tag tag-off sim-chip">sim</span>}
             <span className="mono small muted">{fmtAlertTime(a.timestamp ?? a.receivedAt)}</span>
           </div>
           {a.description && <p>{a.description}</p>}
@@ -26,7 +26,7 @@ export default function AlertList({ alerts, limit, empty = 'No alerts received t
           {(a.department || a.risk_score != null) && (
             <div className="alert-meta mono small">
               {a.department && <span>Route: {a.department}{a.dial ? ` · ${a.dial}` : ''}</span>}
-              {a.risk_score != null && <span>Risk {Math.round(a.risk_score)}</span>}
+              {a.risk_score != null && <span>Risk {Math.round(a.risk_score <= 1 ? a.risk_score * 100 : a.risk_score)}</span>}
             </div>
           )}
         </li>

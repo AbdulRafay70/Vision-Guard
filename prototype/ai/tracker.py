@@ -5,6 +5,7 @@ via Ultralytics built-in tracker.
 Assigns persistent VG-IDs to tracked objects.
 """
 import logging
+import cv2
 import numpy as np
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field
@@ -96,6 +97,40 @@ class ObjectTracker:
         self.tracks: Dict[int, Track] = {}  # track_id -> Track
         self._next_vg_id: int = 1
         self._id_map: Dict[int, str] = {}   # ultralytics_id -> vg_id
+        # Camera-motion compensation state (handheld / PTZ / zooming cameras)
+        self._prev_gray: Optional[np.ndarray] = None
+        self._cam_scale: float = 1.0
+
+    def _estimate_camera_motion(self, frame: np.ndarray) -> Optional[np.ndarray]:
+        """
+        Estimate global camera motion (pan/zoom/rotation) between consecutive
+        frames as a 2x3 affine matrix in full-resolution pixel coordinates.
+
+        Without this, a moving or zooming camera makes *every* object look like
+        it is moving fast — parked cars appeared to travel 300+ px/frame and
+        triggered false car-accident alerts.
+        """
+        h, w = frame.shape[:2]
+        scale = 320.0 / max(w, h)
+        small = cv2.resize(frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        prev, self._prev_gray = self._prev_gray, gray
+        if prev is None or prev.shape != gray.shape:
+            return None
+        pts = cv2.goodFeaturesToTrack(prev, maxCorners=200, qualityLevel=0.01, minDistance=8)
+        if pts is None or len(pts) < 12:
+            return None
+        nxt, st, _ = cv2.calcOpticalFlowPyrLK(prev, gray, pts, None, winSize=(21, 21), maxLevel=3)
+        good = st.reshape(-1) == 1
+        if good.sum() < 12:
+            return None
+        M, inliers = cv2.estimateAffinePartial2D(pts[good], nxt[good], method=cv2.RANSAC,
+                                                 ransacReprojThreshold=2.0)
+        if M is None or inliers is None or inliers.sum() < 10:
+            return None
+        M = M.copy()
+        M[:, 2] /= scale  # translation back to full resolution
+        return M
 
     def _get_vg_id(self, ultra_id: int) -> str:
         """Get or create a VG-ID for an Ultralytics track ID."""
@@ -120,6 +155,7 @@ class ObjectTracker:
         now = time.time()
         h, w = frame.shape[:2]
         frame_area = h * w
+        cam_M = self._estimate_camera_motion(frame)
 
         # Single YOLO pass: detection + ByteTrack association
         # FP16 half-precision enabled on CUDA for ~2x speedup (Rafay Day 1)
@@ -188,13 +224,24 @@ class ObjectTracker:
                     track.confidence = confidence
                     track.bbox = [x1, y1, x2, y2]
 
-                    # Calculate velocity
-                    if len(track.positions) > 0:
+                    # Calculate velocity (object motion only, camera motion removed).
+                    # Skip after a gap: a track reappearing after being lost would
+                    # otherwise register its whole displacement as one-frame speed.
+                    gap = now - track.last_seen
+                    if len(track.positions) > 0 and track.is_active and gap < 0.5:
                         prev = track.positions[-1]
+                        if cam_M is not None:
+                            # Where the previous position moved to purely due to the camera
+                            px = cam_M[0, 0] * prev[0] + cam_M[0, 1] * prev[1] + cam_M[0, 2]
+                            py = cam_M[1, 0] * prev[0] + cam_M[1, 1] * prev[1] + cam_M[1, 2]
+                            prev = (px, py)
                         dx = center[0] - prev[0]
                         dy = center[1] - prev[1]
                         velocity = (dx ** 2 + dy ** 2) ** 0.5
                         track.velocities.append(velocity)
+                    elif gap >= 0.5:
+                        track.velocities.clear()
+                        track.positions.clear()
 
                     track.center = center
                     track.positions.append(center)
@@ -279,5 +326,6 @@ class ObjectTracker:
         """Clear all tracks."""
         self.tracks.clear()
         self._id_map.clear()
+        self._prev_gray = None
         self._next_vg_id = 1
         logger.info("[TRACKER] All tracks reset.")

@@ -140,6 +140,84 @@ def save_evidence(frame, alert: EventAlert):
     print(f"  📸 Evidence saved: {filepath}")
 
 
+class BackgroundAI:
+    """
+    Runs the AI pipeline + event engine on a background thread using
+    latest-frame semantics, so video presentation never waits for inference.
+
+    Previously the display loop ran AI on every frame before showing it: when
+    inference took longer than one frame interval, playback stuttered and
+    showed visible gaps. Now the video plays at its natural speed and overlays
+    the most recent AI result.
+    """
+
+    def __init__(self, pipeline, event_engine, evidence_gen):
+        import threading, queue
+        self.pipeline = pipeline
+        self.event_engine = event_engine
+        self.evidence_gen = evidence_gen
+        self._lock = threading.Lock()
+        self._frame = None
+        self._frame_seq = 0
+        self._analysis = None
+        self.alerts = queue.Queue()
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, daemon=True, name="run-ai")
+        self._thread.start()
+
+    def submit(self, frame):
+        with self._lock:
+            self._frame = frame
+            self._frame_seq += 1
+
+    def latest(self):
+        with self._lock:
+            return self._analysis
+
+    def _loop(self):
+        last_seq = 0
+        while self._running:
+            with self._lock:
+                frame, seq = self._frame, self._frame_seq
+            if frame is None or seq == last_seq:
+                time.sleep(0.002)
+                continue
+            last_seq = seq
+            try:
+                analysis = self.pipeline.process_frame(frame)
+                self.evidence_gen.push_frame(frame)
+                if analysis:
+                    for alert in self.event_engine.process(analysis):
+                        self.alerts.put((alert, frame))
+                    print_frame_summary(analysis, self.pipeline.frame_count)
+                with self._lock:
+                    self._analysis = analysis
+            except Exception as e:
+                logging.getLogger(__name__).error("[AI] Processing error: %s", e, exc_info=True)
+
+    def drain_alerts(self):
+        out = []
+        while not self.alerts.empty():
+            out.append(self.alerts.get_nowait())
+        return out
+
+    def stop(self):
+        self._running = False
+        self._thread.join(timeout=2.0)
+
+
+def fit_to_window(img, max_w=None, max_h=None):
+    """Resize preserving aspect ratio (portrait videos were being squashed)."""
+    max_w = max_w or config.DISPLAY_WIDTH
+    max_h = max_h or config.DISPLAY_HEIGHT
+    h, w = img.shape[:2]
+    scale = min(max_w / w, max_h / h)
+    if abs(scale - 1.0) < 1e-3:
+        return img
+    interp = cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR
+    return cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=interp)
+
+
 def run_webcam(args):
     """Run VisionGuard with laptop webcam."""
     print(f"\n{Fore.CYAN}[MODE] Webcam — Live Detection{Style.RESET_ALL}")
@@ -157,6 +235,7 @@ def run_webcam(args):
         return
 
     pipeline.load_models()
+    ai = BackgroundAI(pipeline, event_engine, evidence_gen)
 
     print(f"\n{Fore.GREEN}[READY] VisionGuard is running. Press 'Q' to quit.{Style.RESET_ALL}\n")
 
@@ -167,29 +246,21 @@ def run_webcam(args):
                 time.sleep(0.01)
                 continue
 
-            # Run AI pipeline
-            analysis = pipeline.process_frame(frame)
-
-            # Push frame to evidence rolling buffer
-            evidence_gen.push_frame(frame)
-
-            # Run event engine
-            new_alerts = []
-            if analysis:
-                new_alerts = event_engine.process(analysis)
-                print_frame_summary(analysis, pipeline.frame_count)
+            # Hand the newest frame to the background AI (never blocks playback)
+            ai.submit(frame)
+            analysis = ai.latest()
 
             # Print any new alerts
-            for alert in new_alerts:
+            for alert, alert_frame in ai.drain_alerts():
                 print_event_alert(alert)
-                save_evidence(frame, alert)
+                save_evidence(alert_frame, alert)
 
             # Render display
             active_alerts = event_engine.get_active_alerts()
             display_frame = display.render(frame, analysis, active_alerts, source.source_name)
 
             # Resize to fit display window
-            display_frame = cv2.resize(display_frame, (config.DISPLAY_WIDTH, config.DISPLAY_HEIGHT))
+            display_frame = fit_to_window(display_frame)
 
             # Show frame
             cv2.imshow("VisionGuard", display_frame)
@@ -214,6 +285,7 @@ def run_webcam(args):
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}[STOP] Interrupted by user.{Style.RESET_ALL}")
     finally:
+        ai.stop()
         pipeline.stop()
         source.stop()
         cv2.destroyAllWindows()
@@ -239,6 +311,7 @@ def run_video(args):
         return
 
     pipeline.load_models()
+    ai = BackgroundAI(pipeline, event_engine, evidence_gen)
 
     print(f"\n{Fore.GREEN}[READY] Processing video...{Style.RESET_ALL}\n")
 
@@ -248,21 +321,13 @@ def run_video(args):
             if not ret:
                 break
 
-            # Run AI pipeline
-            analysis = pipeline.process_frame(frame)
+            # Hand the newest frame to the background AI (never blocks playback)
+            ai.submit(frame)
+            analysis = ai.latest()
 
-            # Push frame to evidence rolling buffer
-            evidence_gen.push_frame(frame)
-
-            # Run event engine
-            new_alerts = []
-            if analysis:
-                new_alerts = event_engine.process(analysis)
-                print_frame_summary(analysis, pipeline.frame_count)
-
-            for alert in new_alerts:
+            for alert, alert_frame in ai.drain_alerts():
                 print_event_alert(alert)
-                save_evidence(frame, alert)
+                save_evidence(alert_frame, alert)
 
             # Render display
             active_alerts = event_engine.get_active_alerts()
@@ -278,7 +343,7 @@ def run_video(args):
                 cv2.rectangle(display_frame, (bar_width, h - 5), (w, h), (50, 50, 50), -1)
 
             # Resize to fit display window
-            display_frame = cv2.resize(display_frame, (config.DISPLAY_WIDTH, config.DISPLAY_HEIGHT))
+            display_frame = fit_to_window(display_frame)
 
             cv2.imshow("VisionGuard", display_frame)
 
@@ -303,6 +368,7 @@ def run_video(args):
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}[STOP] Interrupted.{Style.RESET_ALL}")
     finally:
+        ai.stop()
         pipeline.stop()
         source.stop()
         cv2.destroyAllWindows()
