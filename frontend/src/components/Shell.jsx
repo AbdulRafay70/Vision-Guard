@@ -5,7 +5,7 @@ import { useSpeech } from '../lib/voice';
 import { can } from '../lib/roles';
 import {
   LayoutDashboard, MonitorPlay, List, PlugZap, ShieldAlert, Mic, MicOff, LogOut, BarChart3, Activity,
-  Users, ScrollText, Settings, Ear, Check, CircleAlert,
+  Users, ScrollText, Settings, Ear, Check, CircleAlert, Film,
 } from './Icons';
 
 const NAV = [
@@ -17,6 +17,7 @@ const NAV = [
   { group: 'Network' },
   { id: 'registry', label: 'Camera registry', icon: List },
   { id: 'connect', label: 'Connect camera', icon: PlugZap, when: can.manageCameras },
+  { id: 'demo', label: 'Demo footage', icon: Film },
   { id: 'health', label: 'System health', icon: Activity },
   { group: 'Administration' },
   { id: 'users', label: 'Operators', icon: Users, when: can.manageUsers },

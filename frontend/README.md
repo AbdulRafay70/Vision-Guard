@@ -46,6 +46,7 @@ are retried automatically (15 s backoff, up to 5 min).
 | Analytics | Incidents per day, by type, by area, time of day |
 | Camera registry | City / Area / Street columns (add, rename, delete), camera table with start / stop / edit / delete / location |
 | Connect camera | Site + source (RTSP, local device, video upload), real stream test, connect |
+| Demo footage | Preview the sample clips in `prototype/Videos` (and uploaded clips) and stream them as looping cameras, each placed in an area and pinned to the wall |
 | System health | CPU / memory / GPU, AI throughput, per-camera stream telemetry |
 | Operators | (Super Admin) create, edit, suspend, unlock, reset password, delete |
 | Audit log | (Super Admin, Supervisor) full activity trail |
@@ -64,6 +65,7 @@ Press **V** (or the mic button) and speak, or type into the command bar (`/` to 
 - “Grid three by three”, “Single view”, “Zoom in”, “Full screen”, “Next page”
 - “Add camera 2 to dashboard”, “Remove camera 2 from dashboard”
 - “Stop camera 4”, “Start Boat Basin”
+- “Load demo videos” (streams every sample clip and pins it to the dashboard)
 - “Open analytics”, “Go to incidents”, “Open system health”, “Log out”
 - Backend: “What's going on?”, “System health”, “Confirm alert” (acknowledges the latest open incident),
   “Dismiss alert” (closes it as a false alarm)

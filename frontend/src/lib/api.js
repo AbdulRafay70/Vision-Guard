@@ -59,6 +59,11 @@ export const api = {
     return request('/api/cameras/upload-test-video', { method: 'POST', body: fd });
   },
 
+  // sample footage
+  demoVideos: () => request('/api/demo-videos'),
+  deployDemo: (videos) => send('POST', '/api/demo-videos/deploy', videos ? { videos } : {}),
+  clearDemo: () => send('POST', '/api/demo-videos/clear'),
+
   // locations
   locations: () => request('/api/locations'),
   addCity: (name) => send('POST', '/api/locations/cities', { name }),
@@ -91,6 +96,7 @@ export const api = {
 
 const withToken = (url) => `${url}${url.includes('?') ? '&' : '?'}token=${enc(token)}`;
 export const feedUrl = (id) => withToken(`/video_feed/${enc(id)}`);
+export const mediaUrl = (path) => withToken(path);
 export const evidenceUrl = (name) => withToken(`/evidence_files/${enc(name)}`);
 
 export function wsUrl(path) {

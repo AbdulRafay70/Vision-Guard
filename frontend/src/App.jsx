@@ -15,6 +15,7 @@ import SystemHealth from './pages/SystemHealth';
 import Users from './pages/Users';
 import AuditLog from './pages/AuditLog';
 import Settings from './pages/Settings';
+import DemoFootage from './pages/DemoFootage';
 
 export default function App() {
   const [me, setMe] = useState(null); // { user, preferences }
@@ -204,6 +205,15 @@ function Console({ me, onSignOut, onProfileChange }) {
       case 'stopCamera':
         if (!can.operateCameras(user)) throw new Error('Your role cannot start or stop cameras.');
         return cameraAction(intent.type === 'startCamera' ? 'start' : 'stop', intent.cameraId);
+      case 'demo': {
+        if (!can.manageCameras(user)) throw new Error('Your role cannot deploy demo footage.');
+        const res = await api.deployDemo();
+        const ids = res.deployed.map((d) => d.id);
+        setPinned((p) => [...p, ...ids.filter((id) => !p.includes(id))]);
+        await refresh(); await registry.reload();
+        setPage('dashboard');
+        return `${res.deployed.filter((d) => d.active).length} demo streams are live on the dashboard.`;
+      }
       case 'logout': onSignOut(); break;
       default: break;
     }
@@ -266,7 +276,7 @@ function Console({ me, onSignOut, onProfileChange }) {
       onCommand={runCommand}
       toast={toast}
     >
-      {page === 'dashboard' && <Dashboard {...common} view={view} status={status} alerts={alerts} voiceLog={voiceLog} onNavigate={navigate} />}
+      {page === 'dashboard' && <Dashboard {...common} view={view} status={status} alerts={alerts} voiceLog={voiceLog} onNavigate={navigate} onLoadDemo={() => applyIntent({ type: 'demo' }).then((m) => notify(m)).catch((e) => notify(e.message, 'bad'))} />}
       {page === 'live' && <LiveView {...common} view={view} />}
       {page === 'registry' && <Registry {...common} cameraAction={cameraAction} onNavigate={navigate} />}
       {page === 'connect' && <ConnectCamera {...common} onConnected={(id) => { refresh(); setPinned((p) => (p.includes(id) ? p : [...p, id])); }} />}
@@ -275,6 +285,7 @@ function Console({ me, onSignOut, onProfileChange }) {
       {page === 'health' && <SystemHealth {...common} status={status} />}
       {page === 'users' && <Users {...common} />}
       {page === 'audit' && <AuditLog {...common} />}
+      {page === 'demo' && <DemoFootage {...common} onDeployed={(ids) => setPinned((p) => [...p, ...ids.filter((id) => !p.includes(id))])} />}
       {page === 'settings' && <Settings {...common} voice={voice} setVoice={setVoice} onProfileChange={onProfileChange} />}
     </Shell>
   );

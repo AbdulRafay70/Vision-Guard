@@ -17,6 +17,7 @@ const PAGES = [
   { page: 'connect', words: ['connect camera', 'add camera', 'new camera', 'connection'] },
   { page: 'incidents', words: ['incidents', 'alerts', 'evidence', 'events'] },
   { page: 'analytics', words: ['analytics', 'statistics', 'reports', 'heat map', 'heatmap', 'trends'] },
+  { page: 'demo', words: ['demo footage', 'demo videos', 'sample videos', 'demo page'] },
   { page: 'health', words: ['system health', 'health', 'telemetry', 'diagnostics'] },
   { page: 'users', words: ['users', 'operators', 'accounts', 'user management'] },
   { page: 'audit', words: ['audit', 'audit log', 'activity log'] },
@@ -100,6 +101,7 @@ export function parseIntent(raw, ctx) {
   if (has('next page')) return { type: 'page', dir: 1, say: 'Next page.' };
   if (has('previous page', 'last page', 'page back')) return { type: 'page', dir: -1, say: 'Previous page.' };
   if (has('refresh', 'reload')) return { type: 'refresh', say: 'Refreshing.' };
+  if (/ (load|start|stream|play|run|deploy) (the |all )?(demo|sample)/.test(t)) return { type: 'demo', say: 'Starting demo streams.' };
 
   const cam = findCamera(t, ctx.cameras);
   if (cam && has('pin', 'add', 'put') && has('dashboard', 'wall')) return { type: 'pin', cameraId: cam.id, say: `${cam.name} added to dashboard.` };

@@ -1039,6 +1039,180 @@ async def preview_test_video(filename: str):
     return FileResponse(str(safe_path), media_type="video/mp4")
 
 
+# ── Demo videos: stream bundled sample footage as cameras ─────────────────
+
+DEMO_VIDEOS_DIR = config.BASE_DIR / "Videos"
+_VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+# Scenario hints keyed by filename keyword: display name and the Karachi area it is shown in
+_DEMO_SCENARIOS = [
+    ("fire", "Fire & smoke — demo", "Saddar"),
+    ("gun", "Armed robbery — demo", "Clifton"),
+    ("weapon", "Armed robbery — demo", "Clifton"),
+    ("fight", "Street fight — demo", "Lyari"),
+    ("violence", "Group assault — demo", "Orangi"),
+    ("thug", "Group assault — demo", "Orangi"),
+    ("crowd", "Crowd gathering — demo", "Gulshan"),
+    ("accident", "Road accident — demo", "DHA"),
+]
+
+
+def _demo_dirs():
+    return [("demo", DEMO_VIDEOS_DIR), ("uploads", config.TEST_VIDEOS_DIR)]
+
+
+def _demo_file(folder: str, filename: str) -> Path:
+    base = dict(_demo_dirs()).get(folder)
+    if base is None:
+        raise HTTPException(status_code=404, detail="Unknown video folder")
+    path = (base / filename).resolve()
+    if not path.is_relative_to(base.resolve()) or not path.is_file() or path.suffix.lower() not in _VIDEO_EXTS:
+        raise HTTPException(status_code=404, detail="Video not found")
+    return path
+
+
+def _demo_camera_id(folder: str, path: Path) -> str:
+    import re as _re
+    slug = _re.sub(r"[^a-z0-9]+", "_", path.stem.lower())[:40].strip("_") or "clip"
+    return f"demo_{slug}" if folder == "demo" else f"clip_{slug}"
+
+
+def _camera_for_file(path: Path) -> Optional[str]:
+    """An already-registered video camera that streams this file, if any."""
+    target = path.resolve()
+    for cid, cfg in config.CAMERAS.items():
+        if cfg.get("type") == "video":
+            try:
+                if Path(str(cfg.get("source"))).resolve() == target:
+                    return cid
+            except OSError:
+                continue
+    return None
+
+
+def _demo_meta(path: Path):
+    low = path.name.lower()
+    for key, name, area in _DEMO_SCENARIOS:
+        if key in low:
+            return name, area
+    pretty = path.stem.replace("_", " ").replace("-", " ").strip().title()[:60]
+    return f"{pretty} — demo", "Saddar"
+
+
+@app.get("/api/demo-videos")
+async def list_demo_videos(request: Request):
+    """Sample footage available to stream: bundled clips (prototype/Videos) and uploaded clips."""
+    current_user(request)
+    out = []
+    for folder, base in _demo_dirs():
+        if not base.exists():
+            continue
+        for path in sorted(base.iterdir()):
+            if not path.is_file() or path.suffix.lower() not in _VIDEO_EXTS:
+                continue
+            cam_id = _camera_for_file(path) or _demo_camera_id(folder, path)
+            name, area = _demo_meta(path)
+            out.append({
+                "folder": folder,
+                "filename": path.name,
+                "size_bytes": path.stat().st_size,
+                "suggested_name": name,
+                "suggested_area": area,
+                "camera_id": cam_id,
+                "streaming": cam_id in state.pipelines,
+                "registered": cam_id in config.CAMERAS,
+                "preview_url": f"/api/demo-videos/{folder}/{path.name}",
+            })
+    return JSONResponse(out)
+
+
+@app.get("/api/demo-videos/{folder}/{filename}")
+async def demo_video_file(folder: str, filename: str, request: Request):
+    """Serve a sample clip for in-browser preview."""
+    current_user(request)
+    return FileResponse(str(_demo_file(folder, filename)), media_type="video/mp4")
+
+
+@app.post("/api/demo-videos/deploy")
+async def deploy_demo_videos(request: Request):
+    """
+    Stream sample clips as looping cameras. Body:
+      {"videos": [{"folder": "demo", "filename": "fire.mp4", "name"?: str, "areaId"?: str, "streetId"?: str}], }
+    Omit "videos" to deploy every bundled clip. Each clip is registered, saved,
+    placed in its area (created in Karachi if missing) and started.
+    """
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    data = await _json_body(request) if (await request.body()) else {}
+    items = data.get("videos")
+    if not items:
+        items = [{"folder": "demo", "filename": p.name} for p in sorted(DEMO_VIDEOS_DIR.glob("*"))
+                 if p.is_file() and p.suffix.lower() in _VIDEO_EXTS]
+    if not items:
+        raise HTTPException(status_code=404, detail="No sample videos found in prototype/Videos")
+
+    tree = console_db.location_tree()
+    city = next((c for c in tree if c["name"].lower() == "karachi"), None) or (tree[0] if tree else None)
+    if city is None:
+        city = {**console_db.add_city("Karachi"), "areas": []}
+
+    def area_for(name: str):
+        for a in city["areas"]:
+            if a["name"].lower() == name.lower():
+                return a["id"]
+        node = console_db.add_area(city["id"], name)
+        city["areas"].append({"id": node["id"], "name": name, "streets": []})
+        return node["id"]
+
+    deployed = []
+    for item in items:
+        folder = str(item.get("folder", "demo"))
+        path = _demo_file(folder, str(item.get("filename", "")))
+        existing = _camera_for_file(path)
+        cam_id = existing or _demo_camera_id(folder, path)
+        name, area_name = _demo_meta(path)
+        if existing and not item.get("name"):
+            name = config.CAMERAS[existing].get("name") or name
+        name = str(item.get("name") or name).strip()[:120]
+        if item.get("areaId"):
+            area_id = item["areaId"]
+            city_id = next((c["id"] for c in tree for a in c["areas"] if a["id"] == area_id), city["id"])
+        else:
+            area_id, city_id = area_for(area_name), city["id"]
+        try:
+            console_db.place_camera(cam_id, city_id, area_id, item.get("streetId") or None)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"{path.name}: {e}")
+        config.CAMERAS[cam_id] = {
+            "id": cam_id, "name": name, "type": "video", "source": str(path),
+            "sector": console_db.area_name(area_id) or area_name, "enabled": True,
+        }
+        _persist_camera(cam_id)
+        ok = cam_id in state.pipelines and state.camera_status.get(cam_id, {}).get("state") == "online"
+        if not ok:
+            ok = await asyncio.to_thread(start_camera, cam_id)
+        deployed.append({**_camera_json(cam_id), "placement": console_db.placements().get(cam_id)})
+    console_db.audit(user["username"], "demo_videos_deployed", target=", ".join(d["id"] for d in deployed),
+                     detail=f"{sum(1 for d in deployed if d['active'])}/{len(deployed)} streaming", ip=client_ip(request))
+    return JSONResponse({"deployed": deployed})
+
+
+@app.post("/api/demo-videos/clear")
+async def clear_demo_videos(request: Request):
+    """Stop and remove every camera created from a sample clip."""
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    demo_files = {p.resolve() for _, base in _demo_dirs() if base.exists() for p in base.iterdir() if p.is_file()}
+    removed = [cid for cid, cfg in list(config.CAMERAS.items())
+               if cid.startswith(("demo_", "clip_"))
+               or (cfg.get("type") == "video" and Path(str(cfg.get("source"))).resolve() in demo_files)]
+    for cid in removed:
+        stop_camera(cid)
+        config.CAMERAS.pop(cid, None)
+        state.camera_status.pop(cid, None)
+        state.incident_db.delete_system_camera(cid)
+        console_db.unplace_camera(cid)
+    console_db.audit(user["username"], "demo_videos_cleared", detail=f"{len(removed)} removed", ip=client_ip(request))
+    return JSONResponse({"removed": removed})
+
+
 # ── Innovation 4: VisionGuard Prediction Engine ───────────────────────────
 
 _KARACHI_ZONES = [

@@ -471,3 +471,16 @@ textarea:focus { border-color: var(--accent); outline: none; }
   .rail nav { overflow-x: auto; }
   .facts-tight { grid-template-columns: 1fr 1fr; }
 }
+
+/* Demo footage */
+.demo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.demo-card { overflow: hidden; display: flex; flex-direction: column; }
+.demo-card.is-picked { border-color: var(--accent); }
+.demo-video { position: relative; aspect-ratio: 16 / 9; background: #000; }
+.demo-video video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.demo-video .tag { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.6); }
+.demo-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+.demo-body .btn { align-self: flex-start; }
+.check-sm { align-items: center; gap: 8px; min-width: 0; }
+.check-sm input { margin-top: 0; }
+.row-gap { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
