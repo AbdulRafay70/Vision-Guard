@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Check, CircleAlert, Upload, Radio } from '../components/Icons';
+import AccessFields from '../components/AccessFields';
 
 const TYPES = [
   { id: 'rtsp', label: 'IP camera (RTSP / HTTP)', hint: 'rtsp://user:pass@10.0.0.21:554/stream1' },
@@ -8,14 +9,22 @@ const TYPES = [
   { id: 'video', label: 'Recorded video', hint: 'Server path to a video file, or upload a clip' },
 ];
 
-const NEW = '__new__';
+export const NEW = '__new__';
 
-export default function ConnectCamera({ registry, onConnected }) {
+// Publicly broadcast sample streams for verifying the pipeline end-to-end without
+// a private camera. These are open/public test feeds — access basis 'public'.
+const PUBLIC_STREAMS = [
+  { name: 'Public test stream — Big Buck Bunny (RTSP)', type: 'rtsp', source: 'rtsp://rtspstream.bapi.us/live/bunny' },
+  { name: 'Public test pattern (HLS)', type: 'rtsp', source: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8' },
+];
+
+export function ManualConnect({ registry, onConnected, notify }) {
   const [cityId, setCityId] = useState(registry.cities[0]?.id || '');
   const [areaId, setAreaId] = useState('');
   const [streetId, setStreetId] = useState('');
   const [newName, setNewName] = useState({ city: '', area: '', street: '' });
 
+  const [access, setAccess] = useState({ basis: '' });
   const [type, setType] = useState('rtsp');
   const [name, setName] = useState('');
   const [camId, setCamId] = useState('');
@@ -25,21 +34,28 @@ export default function ConnectCamera({ registry, onConnected }) {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState('');
 
+  // Cities load from the server after mount; default to the first one
+  useEffect(() => {
+    if (!cityId && registry.cities[0]) setCityId(registry.cities[0].id);
+  }, [cityId, registry.cities]);
+
   const city = registry.cities.find((c) => c.id === cityId);
   const area = city?.areas.find((a) => a.id === areaId);
 
-  // Resolve "new …" selections into real registry nodes at submit time
-  const resolveLocation = () => {
-    let c = cityId, a = areaId, s = streetId;
-    if (c === NEW) { if (!newName.city.trim()) throw new Error('Enter the new city name.'); c = registry.addCity(newName.city); }
-    if (!c) throw new Error('Select a city.');
-    if (a === NEW) { if (!newName.area.trim()) throw new Error('Enter the new area name.'); a = registry.addArea(c, newName.area); }
-    if (!a) throw new Error('Select an area.');
-    if (s === NEW) { if (!newName.street.trim()) throw new Error('Enter the new street name.'); s = registry.addStreet(c, a, newName.street); }
+  // Validate first, then create any "new …" locations in the database
+  const resolveLocation = async () => {
+    if (!cityId) throw new Error('Select a city.');
+    if (cityId === NEW && !newName.city.trim()) throw new Error('Enter the new city name.');
+    if (!areaId) throw new Error('Select an area.');
+    if (areaId === NEW && !newName.area.trim()) throw new Error('Enter the new area name.');
+    if (streetId === NEW && !newName.street.trim()) throw new Error('Enter the new street name.');
+    const c = cityId === NEW ? await registry.addCity(newName.city) : cityId;
+    const a = areaId === NEW ? await registry.addArea(c, newName.area) : areaId;
+    const s = streetId === NEW ? await registry.addStreet(c, a, newName.street) : streetId;
+    setCityId(c); setAreaId(a); setStreetId(s || '');
+    setNewName({ city: '', area: '', street: '' });
     return { cityId: c, areaId: a, ...(s ? { streetId: s } : {}) };
   };
-
-  const areaName = () => (areaId === NEW ? newName.area : area?.name) || '';
 
   const runTest = async () => {
     setTest(null); setBusy('test');
@@ -64,22 +80,27 @@ export default function ConnectCamera({ registry, onConnected }) {
     setMsg(null);
     if (!name.trim()) { setMsg({ ok: false, text: 'Enter a camera name.' }); return; }
     if (!String(source).trim()) { setMsg({ ok: false, text: 'Enter the camera source.' }); return; }
-    let placement;
-    try { placement = resolveLocation(); } catch (err) { setMsg({ ok: false, text: err.message }); return; }
-
+    if (!access.basis) { setMsg({ ok: false, text: 'Record the lawful basis for accessing this camera.' }); return; }
     setBusy('connect');
     try {
+      const location = await resolveLocation();
       const res = await api.connectCamera({
         id: camId.trim() || undefined,
         name: name.trim(),
         type,
         source: type === 'webcam' ? Number(source) : source.trim(),
-        sector: areaName(),
+        location,
+        access,
       });
-      registry.place(res.id, placement);
+      await registry.reload();
       onConnected(res.id);
-      setMsg({ ok: true, text: `${res.name} is connected and streaming. It has been pinned to the dashboard.` });
-      setName(''); setCamId(''); setSource(''); setTest(null);
+      if (res.status === 'online') {
+        setMsg({ ok: true, text: `${res.name} is connected and streaming. It has been saved and pinned to the dashboard.` });
+        notify(`${res.name} connected.`);
+      } else {
+        setMsg({ ok: false, text: `${res.name} was saved but is not streaming yet: ${res.status_message || res.status}. The server keeps retrying automatically.` });
+      }
+      setName(''); setCamId(''); setSource(''); setTest(null); setAccess({ basis: '' });
     } catch (err) {
       setMsg({ ok: false, text: err.message });
     }
@@ -89,14 +110,7 @@ export default function ConnectCamera({ registry, onConnected }) {
   const typeInfo = TYPES.find((t) => t.id === type);
 
   return (
-    <div className="page page-narrow">
-      <div className="page-head">
-        <div>
-          <h1>Connect camera</h1>
-          <p className="muted">Register a new feed. It starts streaming through the AI pipeline as soon as it connects; other feeds are not interrupted.</p>
-        </div>
-      </div>
-
+    <>
       <form className="form-sections" onSubmit={submit}>
         <fieldset className="panel form-section">
           <legend><span className="step">1</span>Installation site</legend>
@@ -132,10 +146,23 @@ export default function ConnectCamera({ registry, onConnected }) {
               <input type="file" accept="video/*" onChange={(e) => upload(e.target.files?.[0])} hidden />
             </label>
           )}
+          <div className="public-streams">
+            <span className="muted small">Or use a public test stream:</span>
+            {PUBLIC_STREAMS.map((ps) => (
+              <button type="button" key={ps.name} className="chip" onClick={() => {
+                setType(ps.type); setSource(ps.source); if (!name) setName(ps.name); setAccess({ basis: 'public', note: 'Public test stream' }); setTest(null);
+              }}>{ps.name}</button>
+            ))}
+          </div>
         </fieldset>
 
         <fieldset className="panel form-section">
-          <legend><span className="step">3</span>Verify and connect</legend>
+          <legend><span className="step">3</span>Access authorisation</legend>
+          <AccessFields value={access} onChange={setAccess} />
+        </fieldset>
+
+        <fieldset className="panel form-section">
+          <legend><span className="step">4</span>Verify and connect</legend>
           <div className="form-actions">
             <button type="button" className="btn btn-ghost" disabled={!source || busy} onClick={runTest}>
               <Radio size={15} /> {busy === 'test' ? 'Testing…' : 'Test connection'}
@@ -152,11 +179,11 @@ export default function ConnectCamera({ registry, onConnected }) {
           {msg && <div className={`notice ${msg.ok ? 'notice-ok' : 'notice-error'}`}>{msg.ok ? <Check size={16} /> : <CircleAlert size={16} />}{msg.text}</div>}
         </fieldset>
       </form>
-    </div>
+    </>
   );
 }
 
-function LevelSelect({ label, value, onChange, items, newLabel, newValue, onNewValue, disabled, optional }) {
+export function LevelSelect({ label, value, onChange, items, newLabel, newValue, onNewValue, disabled, optional }) {
   return (
     <label className="field">
       <span>{label} {optional && <em>optional</em>}</span>

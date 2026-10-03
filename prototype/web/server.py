@@ -24,6 +24,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import secrets
 import shutil
+import hashlib
+import re
+import random
 
 import config
 from camera.webcam import WebcamSource
@@ -33,10 +36,15 @@ from events.engine import EventEngine, EVENT_EMOJI
 from events.base import EventAlert
 from output.evidence import EvidencePackageGenerator
 
-from web.user_manager import UserManager
+from web.console_db import ConsoleDatabase, CAMERA_ADMIN_ROLES, ACCESS_BASES
+from web.console_api import build_router, install_auth_middleware, current_user, require_role, client_ip
 
 logger = logging.getLogger(__name__)
-user_mgr = UserManager()
+console_db = ConsoleDatabase(
+    db_path=config.BASE_DIR / "data" / "visionguard_incidents.db",
+    default_password=config.WEB_PASSWORD,
+    legacy_users_file=Path(__file__).parent / "users.json",
+)
 
 # ── Basic Authentication ──────────────────────────────────────────────────
 security = HTTPBasic(auto_error=False)
@@ -86,6 +94,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+install_auth_middleware(app, console_db, enabled=config.API_AUTH_REQUIRED)
+app.include_router(build_router(console_db))
 
 BASE_DIR = Path(__file__).parent.parent
 WEB_DIR = BASE_DIR / "web"
@@ -155,6 +166,16 @@ class AppState:
         self.narrator = None      # Bilingual event narrator (Day 5)
         from events.incident_db import IncidentDatabase
         self.incident_db: IncidentDatabase = IncidentDatabase()
+        self.camera_status: Dict[str, Dict[str, Any]] = {}
+        self.loop = None
+        self.sim_task = None                 # asyncio Task for the demo alert simulator
+        self.sim = {"running": False, "rate_seconds": 6, "generated": 0}
+        self._cam_locks: Dict[str, threading.Lock] = {}
+        self._cam_locks_guard = threading.Lock()
+
+    def camera_lock(self, cam_id: str) -> threading.Lock:
+        with self._cam_locks_guard:
+            return self._cam_locks.setdefault(cam_id, threading.Lock())
 
     def initialize(self):
         """Initialize camera sources, AI pipeline, and event engine."""
@@ -190,45 +211,37 @@ class AppState:
 
         # Capture the running asyncio event loop for WebSocket broadcasts
         try:
-            asyncio_loop = asyncio.get_running_loop()
+            self.loop = asyncio.get_running_loop()
         except RuntimeError:
-            asyncio_loop = None
+            self.loop = None
 
-        # Initialize camera sources and decoupled pipelines
+        # Cameras are stored in SQLite. On first run, seed the table from config.CAMERAS.
+        stored = self.incident_db.get_all_system_cameras()
+        if not stored:
+            for cam_id, cam_info in config.CAMERAS.items():
+                self.incident_db.save_camera(cam_id=cam_id, name=cam_info.get("name", cam_id),
+                                             sector=cam_info.get("sector", ""), cam_type=cam_info["type"],
+                                             source=str(cam_info["source"]),
+                                             enabled=1 if cam_info.get("enabled") else 0)
+            stored = self.incident_db.get_all_system_cameras()
+        config.CAMERAS.clear()
+        for row in stored:
+            source = row["source"]
+            if row["type"] == "webcam":
+                try:
+                    source = int(source)
+                except ValueError:
+                    pass
+            config.CAMERAS[row["id"]] = {
+                "id": row["id"], "name": row["name"], "sector": row.get("sector", ""),
+                "type": row["type"], "source": source, "enabled": bool(row["enabled"]),
+            }
+
+        # Start enabled cameras in the background so a slow RTSP host can't block startup
         for cam_id, cam_info in config.CAMERAS.items():
-            if cam_info.get("enabled", False):
-                source = None
-                if cam_info["type"] == "webcam":
-                    source = WebcamSource(camera_index=cam_info["source"])
-                elif cam_info["type"] == "video":
-                    from camera.video_file import VideoFileSource
-                    source = VideoFileSource(
-                        file_path=cam_info["source"],
-                        loop=True,
-                        throttle=True,
-                    )
-                elif cam_info["type"] == "rtsp":
-                    source = RTSPSource(
-                        rtsp_url=cam_info["source"],
-                        camera_name=cam_info["name"],
-                    )
-
-                if source and source.start():
-                    self.camera_sources[cam_id] = source
-                    logger.info("[INIT] Camera '%s' started", cam_id)
-
-                    # Create and start decoupled pipeline for this camera
-                    stream_pipeline = CameraStreamPipeline(
-                        camera_source=source,
-                        pipeline=self.pipeline,
-                        event_engine=self.event_engine,
-                        evidence_generator=self.evidence_generator,
-                        camera_name=cam_info.get("name", cam_id),
-                    )
-                    stream_pipeline.start(asyncio_loop=asyncio_loop)
-                    self.pipelines[cam_id] = stream_pipeline
-                else:
-                    logger.warning("[INIT] Camera '%s' failed to start", cam_id)
+            if cam_info.get("enabled"):
+                start_camera_async(cam_id)
+        threading.Thread(target=_camera_watchdog, daemon=True, name="camera-watchdog").start()
 
 
 state = AppState()
@@ -255,6 +268,9 @@ async def shutdown_event():
     if state.audio_monitor is not None:
         state.audio_monitor.stop()
         logger.info("[SHUTDOWN] Audio monitor stopped")
+    state.sim["running"] = False
+    if state.sim_task:
+        state.sim_task.cancel()
 
 
 # ── Decoupled Frame Pipeline ─────────────────────────────────────────────
@@ -276,12 +292,13 @@ class CameraStreamPipeline:
     """
 
     def __init__(self, camera_source, pipeline, event_engine,
-                 evidence_generator, camera_name: str):
+                 evidence_generator, camera_name: str, camera_id: Optional[str] = None):
         self.source = camera_source
         self.pipeline = pipeline
         self.event_engine = event_engine
         self.evidence_generator = evidence_generator
         self.camera_name = camera_name
+        self.camera_id = camera_id or camera_name
 
         from camera.slot import LatestFrameSlot, TimestampedFrame
         self.slot = getattr(camera_source, "slot", None) or LatestFrameSlot(name=f"slot-{camera_name}")
@@ -334,6 +351,12 @@ class CameraStreamPipeline:
         self._running = False
         for t in self._threads:
             t.join(timeout=3.0)
+        # Per-camera pipeline owns its specialist worker thread
+        if self.pipeline is not None and self.pipeline is not state.pipeline:
+            try:
+                self.pipeline.stop()
+            except Exception:
+                pass
         logger.info("[PIPELINE] Stopped pipeline for '%s'", self.camera_name)
 
     def _camera_reader(self):
@@ -456,16 +479,22 @@ class CameraStreamPipeline:
                     for alert in new_alerts:
                         self.evidence_generator.create_package(tf.frame, alert)
 
-                        # Record into authentic incident database
+                        # Record into the incident database (sector = the camera's area)
+                        incident = None
+                        sector = config.CAMERAS.get(self.camera_id, {}).get("sector") or self.camera_name
                         if hasattr(state, "incident_db") and state.incident_db:
-                            state.incident_db.add_incident(
-                                sector=self.camera_name,
-                                event_type=alert.event_type,
-                                risk_score=alert.risk_score,
-                                risk_level=alert.risk_level,
-                                camera_id=self.camera_name,
-                                source="vision_guard_ai"
-                            )
+                            try:
+                                incident = state.incident_db.add_incident(
+                                    sector=sector,
+                                    event_type=alert.event_type,
+                                    risk_score=alert.risk_score,
+                                    risk_level=alert.risk_level,
+                                    camera_id=self.camera_id,
+                                    source="vision_guard_ai",
+                                    description=alert.description,
+                                )
+                            except Exception as e:
+                                logger.error("[AI-WORKER] Failed to record incident: %s", e)
 
                         alert_data = {
                             "type": "NEW_ALERT",
@@ -477,6 +506,10 @@ class CameraStreamPipeline:
                             "department": alert.department,
                             "dial": alert.dial,
                             "timestamp": alert.timestamp,
+                            "incident_code": incident["id"] if incident else None,
+                            "camera_id": self.camera_id,
+                            "camera_name": self.camera_name,
+                            "sector": sector,
                         }
                         if self._asyncio_loop and self._asyncio_loop.is_running():
                             asyncio.run_coroutine_threadsafe(
@@ -632,293 +665,404 @@ async def video_feed(camera_id: str):
     )
 
 
-@app.get("/api/cameras")
-async def get_cameras():
-    """Return all configured and dynamic cameras with live telemetry."""
-    result = []
-    # Fetch cameras persisted in SQLite database
-    if hasattr(state, "incident_db") and state.incident_db:
+# ── Camera lifecycle (persisted in SQLite system_cameras) ─────────────────
+
+def _mask_source(source: str) -> str:
+    """Hide credentials embedded in stream URLs (rtsp://user:pass@host)."""
+    import re as _re
+    return _re.sub(r"(://)([^/@:]+):([^/@]+)@", r"\1\2:•••••@", str(source))
+
+
+def _set_cam_status(cam_id: str, status: str, message: str = ""):
+    prev = state.camera_status.get(cam_id, {})
+    state.camera_status[cam_id] = {
+        "state": status,
+        "message": message,
+        "since": prev.get("since") if prev.get("state") == status else datetime.now().isoformat(timespec="seconds"),
+        "attempts": prev.get("attempts", 0) + (1 if status == "error" else 0) if status != "online" else 0,
+    }
+
+
+def _build_source(cam_type: str, source_val, cam_name: str):
+    if cam_type == "webcam":
+        return WebcamSource(camera_index=int(source_val))
+    if cam_type == "video":
+        from camera.video_file import VideoFileSource
+        return VideoFileSource(file_path=str(source_val), loop=True, throttle=True)
+    if cam_type == "rtsp":
+        return RTSPSource(rtsp_url=str(source_val), camera_name=cam_name)
+    raise ValueError(f"Unsupported camera type: {cam_type}. Use 'webcam', 'rtsp', or 'video'.")
+
+
+def stop_camera(cam_id: str):
+    """Stop a camera's stream pipeline and release its source (keeps its stored record)."""
+    pipe = state.pipelines.pop(cam_id, None)
+    if pipe:
         try:
-            db_cams = state.incident_db.get_system_cameras()
-            for c in db_cams:
-                if c["id"] not in config.CAMERAS:
-                    config.CAMERAS[c["id"]] = c
+            pipe.stop()
         except Exception as e:
-            logger.warning("[API] Failed to fetch SQLite cameras: %s", e)
+            logger.warning("[CAMERA] Error stopping pipeline '%s': %s", cam_id, e)
+    src = state.camera_sources.pop(cam_id, None)
+    if src:
+        try:
+            src.stop()
+        except Exception as e:
+            logger.warning("[CAMERA] Error stopping source '%s': %s", cam_id, e)
 
-    all_camera_ids = list(config.CAMERAS.keys())
-    for dyn_id in state.pipelines.keys():
-        if dyn_id not in all_camera_ids:
-            all_camera_ids.append(dyn_id)
 
-    for cam_id in all_camera_ids:
-        cam_cfg = config.CAMERAS.get(cam_id, {})
-        pipeline = state.pipelines.get(cam_id)
-        is_active = pipeline is not None
-        stats = pipeline.get_latency_stats() if pipeline else {
-            "camera_fps": 0.0,
-            "display_fps": 0.0,
-            "unique_fps": 0.0,
-            "duplicate_frames": 0,
-            "avg_frame_age_ms": 0.0,
-            "p95_frame_age_ms": 0.0,
-            "dropped_stale": 0,
-            "buffer_capacity": 1,
-        }
-        result.append({
-            "id": cam_id,
-            "name": cam_cfg.get("name", cam_id),
-            "type": cam_cfg.get("type", "unknown"),
-            "source": str(cam_cfg.get("source", "")),
-            "enabled": cam_cfg.get("enabled", is_active),
-            "active": is_active,
-            "stats": stats,
-        })
-    return JSONResponse(result)
+def start_camera(cam_id: str) -> bool:
+    """(Re)start the stream for a configured camera. Blocking — call from a worker thread for RTSP."""
+    cfg = config.CAMERAS.get(cam_id)
+    if not cfg:
+        return False
+    grant = console_db.get_access(cam_id)
+    if grant and grant.get("revoked"):
+        stop_camera(cam_id)
+        _set_cam_status(cam_id, "revoked", "Access revoked — stream blocked")
+        return False
+    with state.camera_lock(cam_id):
+        stop_camera(cam_id)
+        _set_cam_status(cam_id, "connecting", "Opening stream…")
+        try:
+            source = _build_source(cfg["type"], cfg["source"], cfg.get("name", cam_id))
+            first_ok = source.start()
+            # Network cameras heal themselves (reconnect loop inside the source), so keep
+            # them attached even if the first attempt failed; status comes from get_health().
+            if not first_ok and not hasattr(source, "get_health"):
+                _set_cam_status(cam_id, "error", f"Could not open source ({cfg['type']})")
+                return False
+        except Exception as e:
+            _set_cam_status(cam_id, "error", str(e))
+            return False
+        if state.pipeline is None or state.event_engine is None:
+            # AI not initialised (e.g. models missing) — stream raw frames is not supported, so report clearly
+            source.stop()
+            _set_cam_status(cam_id, "error", "AI pipeline is not initialised")
+            return False
+        # Per-camera AI state (tracker, specialist worker, event windows) so one
+        # camera's objects and alerts never mix with another's. Models are shared.
+        cam_pipeline = AIPipeline.for_camera(state.pipeline)
+        cam_engine = EventEngine(audio_monitor=state.audio_monitor)
+        stream_pipeline = CameraStreamPipeline(
+            camera_source=source,
+            pipeline=cam_pipeline,
+            event_engine=cam_engine,
+            # Own evidence recorder per camera: a shared one let several camera
+            # threads write clips at once (FFmpeg segfault) and mixed cameras' frames.
+            evidence_generator=EvidencePackageGenerator(),
+            camera_name=cfg.get("name", cam_id),
+            camera_id=cam_id,
+        )
+        stream_pipeline.start(asyncio_loop=state.loop)
+        state.camera_sources[cam_id] = source
+        state.pipelines[cam_id] = stream_pipeline
+        if first_ok:
+            _set_cam_status(cam_id, "online", "Streaming")
+            logger.info("[CAMERA] '%s' online (%s)", cam_id, cfg["type"])
+            return True
+        _set_cam_status(cam_id, "error", getattr(source, "last_error", "") or "Not connected yet — retrying")
+        return False
+
+
+def start_camera_async(cam_id: str):
+    threading.Thread(target=start_camera, args=(cam_id,), daemon=True, name=f"cam-start-{cam_id}").start()
+
+
+def _camera_watchdog():
+    """Retry enabled cameras that failed to connect, with backoff (15s → 5 min)."""
+    while True:
+        time.sleep(15)
+        for cam_id, cfg in list(config.CAMERAS.items()):
+            if not cfg.get("enabled") or cam_id in state.pipelines:
+                continue
+            st = state.camera_status.get(cam_id, {})
+            if st.get("state") == "connecting":
+                continue
+            wait = min(300, 15 * (2 ** min(st.get("attempts", 0), 5)))
+            try:
+                since = datetime.fromisoformat(st.get("since")) if st.get("since") else None
+            except ValueError:
+                since = None
+            if since and (datetime.now() - since).total_seconds() < wait:
+                continue
+            logger.info("[WATCHDOG] Reconnecting camera '%s'", cam_id)
+            start_camera(cam_id)
+
+
+def _camera_json(cam_id: str, full_source: bool = False) -> dict:
+    cfg = config.CAMERAS.get(cam_id, {})
+    pipeline = state.pipelines.get(cam_id)
+    st = state.camera_status.get(cam_id, {"state": "stopped" if not cfg.get("enabled") else "connecting", "message": ""})
+    if not cfg.get("enabled") and not pipeline:
+        st = {**st, "state": "stopped", "message": "Stopped by operator"}
+    stats = pipeline.get_latency_stats() if pipeline else {
+        "camera_fps": 0.0, "display_fps": 0.0, "unique_fps": 0.0, "duplicate_frames": 0,
+        "avg_frame_age_ms": 0.0, "p95_frame_age_ms": 0.0, "dropped_stale": 0, "buffer_capacity": 1,
+    }
+    src = state.camera_sources.get(cam_id)
+    link = {}
+    if pipeline and src is not None and hasattr(src, "get_health"):
+        h = src.get_health()
+        link = {"transport": h.get("transport"), "resolution": h.get("resolution"), "failures": h.get("failures")}
+        mapped = {"online": "online", "connecting": "connecting", "reconnecting": "connecting", "error": "error"}.get(h.get("state"), "connecting")
+        res = h.get("resolution") or [0, 0]
+        msg = h.get("last_error") or (f"Streaming via {str(h.get('transport') or '').upper()} {res[0]}×{res[1]}" if mapped == "online" else "Connecting…")
+        st = {**st, "state": mapped, "message": msg}
+    device = console_db.camera_devices().get(cam_id)
+    access = console_db.grants().get(cam_id)
+    if access and access.get("revoked") and not pipeline:
+        st = {**st, "state": "revoked", "message": f"Access revoked by {access.get('revoked_by') or 'an administrator'}"}
+    source = str(cfg.get("source", ""))
+    return {
+        "device": device,
+        "access": access,
+        "link": link,
+        "id": cam_id,
+        "name": cfg.get("name", cam_id),
+        "type": cfg.get("type", "unknown"),
+        "source": source if full_source else _mask_source(source),
+        "sector": cfg.get("sector", ""),
+        "enabled": bool(cfg.get("enabled")),
+        "active": pipeline is not None and st.get("state") == "online",
+        "status": st.get("state"),
+        "status_message": st.get("message", ""),
+        "status_since": st.get("since"),
+        "stats": stats,
+    }
+
+
+def _persist_camera(cam_id: str):
+    cfg = config.CAMERAS[cam_id]
+    state.incident_db.save_camera(cam_id=cam_id, name=cfg["name"], sector=cfg.get("sector", ""),
+                                  cam_type=cfg["type"], source=str(cfg["source"]),
+                                  enabled=1 if cfg.get("enabled") else 0)
+
+
+async def _json_body(request: Request) -> dict:
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    return data
+
+
+def _validate_camera_payload(data: dict, partial: bool = False) -> dict:
+    out = {}
+    if "name" in data or not partial:
+        name = str(data.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Camera name is required")
+        out["name"] = name[:120]
+    if "type" in data or not partial:
+        cam_type = str(data.get("type", "rtsp")).strip().lower()
+        if cam_type not in ("webcam", "rtsp", "video"):
+            raise HTTPException(status_code=400, detail="Camera type must be 'rtsp', 'webcam' or 'video'")
+        out["type"] = cam_type
+    if "source" in data or not partial:
+        src = data.get("source")
+        if src is None or (isinstance(src, str) and not src.strip()):
+            raise HTTPException(status_code=400, detail="Camera source is required (URL, device index or file path)")
+        out["source"] = src.strip() if isinstance(src, str) else src
+    cam_type = out.get("type")
+    if cam_type == "webcam":
+        try:
+            out["source"] = int(out.get("source"))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Local device source must be a device index such as 0")
+    if cam_type == "rtsp" and not str(out.get("source", "")).startswith(("rtsp://", "rtsps://", "http://", "https://")):
+        raise HTTPException(status_code=400, detail="IP camera source must start with rtsp://, http:// or https://")
+    return out
+
+
+@app.get("/api/cameras")
+async def get_cameras(request: Request):
+    """All stored cameras with live status and telemetry."""
+    current_user(request)
+    return JSONResponse([_camera_json(cid) for cid in config.CAMERAS])
+
+
+@app.get("/api/cameras/{camera_id}")
+async def get_camera(camera_id: str, request: Request):
+    user = current_user(request)
+    if camera_id not in config.CAMERAS:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    return JSONResponse(_camera_json(camera_id, full_source=user["role"] in CAMERA_ADMIN_ROLES))
 
 
 @app.post("/api/cameras/connect")
 async def connect_camera(request: Request):
     """
-    Connect a new camera dynamically (Webcam, RTSP, Video File)
-    without restarting the AI pipeline or interrupting other streams.
-    Requirement 10: CCTV UI must remain completely independent from the inference pipeline.
+    Register and start a camera (Webcam, RTSP, Video File) without interrupting
+    other streams. The camera and its location are saved to the database.
     """
-    try:
-        data = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    data = await _json_body(request)
+    fields = _validate_camera_payload(data)
+    import re as _re
+    cam_id = str(data.get("id") or "").strip() or f"cam_{int(time.time())}"
+    if not _re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", cam_id):
+        raise HTTPException(status_code=400, detail="Camera ID may only contain letters, digits, dot, dash and underscore")
+    if cam_id in config.CAMERAS and not data.get("replace"):
+        raise HTTPException(status_code=409, detail=f"Camera ID '{cam_id}' is already registered")
 
-    cam_id = str(data.get("id") or f"cam_{int(time.time())}").strip()
-    cam_name = str(data.get("name") or f"Camera {cam_id}").strip()
-    cam_type = str(data.get("type", "video")).strip().lower()
-    source_val = data.get("source")
-
-    if source_val is None or (isinstance(source_val, str) and not source_val.strip()):
-        raise HTTPException(status_code=400, detail="Missing camera source (index, URL, or file path)")
-
-    # If camera already running with this ID, stop old pipeline first
-    if cam_id in state.pipelines:
+    loc = data.get("location") or {}
+    sector = console_db.area_name(loc.get("areaId")) if loc.get("areaId") else str(data.get("sector") or "")
+    if loc.get("areaId"):
         try:
-            state.pipelines[cam_id].stop()
-        except Exception as e:
-            logger.warning("[CONNECT] Error stopping existing pipeline for '%s': %s", cam_id, e)
-
-    # Instantiate the requested camera source
-    source = None
-    try:
-        if cam_type == "webcam":
-            source = WebcamSource(camera_index=int(source_val))
-        elif cam_type == "video":
-            from camera.video_file import VideoFileSource
-            source = VideoFileSource(file_path=str(source_val), loop=True, throttle=True)
-        elif cam_type == "rtsp":
-            source = RTSPSource(rtsp_url=str(source_val), camera_name=cam_name)
-        else:
-            raise HTTPException(status_code=400, detail=f"Unsupported camera type: {cam_type}. Use 'webcam', 'rtsp', or 'video'.")
-
-        if not source.start():
-            raise HTTPException(status_code=400, detail=f"Failed to connect to source: {source_val}")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("[CONNECT] Failed to instantiate source: %s", e)
-        raise HTTPException(status_code=400, detail=f"Camera source initialization error: {str(e)}")
-
-    # Update config registry and SQLite database table
-    cam_sector = str(data.get("sector") or "Saddar").strip()
-    config.CAMERAS[cam_id] = {
-        "id": cam_id,
-        "name": cam_name,
-        "sector": cam_sector,
-        "type": cam_type,
-        "source": source_val,
-        "enabled": True,
-    }
-    if hasattr(state, "incident_db") and state.incident_db:
-        state.incident_db.save_camera(
-            cam_id=cam_id,
-            name=cam_name,
-            sector=cam_sector,
-            cam_type=cam_type,
-            source=str(source_val)
-        )
-    state.camera_sources[cam_id] = source
+            console_db.place_camera(cam_id, loc.get("cityId"), loc.get("areaId"), loc.get("streetId"))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        asyncio_loop = asyncio.get_running_loop()
-    except RuntimeError:
-        asyncio_loop = None
+        access = console_db.validate_access(data.get("access"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # Start independent decoupled 3-tier pipeline
-    stream_pipeline = CameraStreamPipeline(
-        camera_source=source,
-        pipeline=state.pipeline,
-        event_engine=state.event_engine,
-        evidence_generator=state.evidence_generator,
-        camera_name=cam_name,
-    )
-    stream_pipeline.start(asyncio_loop=asyncio_loop)
-    state.pipelines[cam_id] = stream_pipeline
+    config.CAMERAS[cam_id] = {"id": cam_id, **fields, "sector": sector or "", "enabled": True}
+    _persist_camera(cam_id)
+    console_db.set_access(cam_id, access, user["username"])
+    ok = await asyncio.to_thread(start_camera, cam_id)
+    console_db.audit(user["username"], "camera_connected", target=cam_id,
+                     detail=f"basis={access['basis']} {fields['type']} {_mask_source(fields['source'])} — {'online' if ok else 'failed, will retry'}",
+                     ip=client_ip(request))
+    return JSONResponse({"status": "connected" if ok else "saved", **_camera_json(cam_id)}, status_code=201)
 
-    logger.info("[CONNECT] Camera '%s' (%s: %s) started successfully", cam_id, cam_type, cam_name)
-    return JSONResponse({
-        "status": "connected",
-        "id": cam_id,
-        "name": cam_name,
-        "type": cam_type,
-        "active": True
-    })
+
+@app.put("/api/cameras/{camera_id}")
+async def update_camera(camera_id: str, request: Request):
+    """Edit a camera's name / type / source. The stream restarts if the source changed."""
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    if camera_id not in config.CAMERAS:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    data = await _json_body(request)
+    cfg = config.CAMERAS[camera_id]
+    merged = {"name": cfg["name"], "type": cfg["type"], "source": cfg["source"]}
+    merged.update({k: v for k, v in data.items() if k in ("name", "type", "source")})
+    # Masked password sent back unchanged → keep the stored source
+    if isinstance(merged["source"], str) and "•" in merged["source"]:
+        merged["source"] = cfg["source"]
+    fields = _validate_camera_payload(merged)
+    restart = fields["type"] != cfg["type"] or str(fields["source"]) != str(cfg["source"])
+    cfg.update(fields)
+    _persist_camera(camera_id)
+    if restart and cfg.get("enabled"):
+        await asyncio.to_thread(start_camera, camera_id)
+    elif camera_id in state.pipelines:
+        state.pipelines[camera_id].camera_name = cfg["name"]
+    console_db.audit(user["username"], "camera_updated", target=camera_id,
+                     detail=", ".join(sorted(k for k in data if k in ("name", "type", "source"))), ip=client_ip(request))
+    return JSONResponse(_camera_json(camera_id))
+
+
+@app.post("/api/cameras/{camera_id}/start")
+async def start_camera_endpoint(camera_id: str, request: Request):
+    user = require_role(request, CAMERA_ADMIN_ROLES | {"Tactical Operator"})
+    if camera_id not in config.CAMERAS:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    config.CAMERAS[camera_id]["enabled"] = True
+    state.incident_db.set_camera_enabled(camera_id, True)
+    ok = await asyncio.to_thread(start_camera, camera_id)
+    console_db.audit(user["username"], "camera_started", target=camera_id, detail="online" if ok else "failed", ip=client_ip(request))
+    return JSONResponse(_camera_json(camera_id))
+
+
+@app.post("/api/cameras/{camera_id}/stop")
+async def stop_camera_endpoint(camera_id: str, request: Request):
+    user = require_role(request, CAMERA_ADMIN_ROLES | {"Tactical Operator"})
+    if camera_id not in config.CAMERAS:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    config.CAMERAS[camera_id]["enabled"] = False
+    state.incident_db.set_camera_enabled(camera_id, False)
+    stop_camera(camera_id)
+    _set_cam_status(camera_id, "stopped", "Stopped by operator")
+    console_db.audit(user["username"], "camera_stopped", target=camera_id, ip=client_ip(request))
+    return JSONResponse(_camera_json(camera_id))
+
+
+@app.delete("/api/cameras/{camera_id}")
+async def delete_camera(camera_id: str, request: Request):
+    """Stop a camera and remove it (and its location) from the database."""
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    if camera_id not in config.CAMERAS and camera_id not in state.pipelines:
+        raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
+    stop_camera(camera_id)
+    config.CAMERAS.pop(camera_id, None)
+    state.camera_status.pop(camera_id, None)
+    state.incident_db.delete_system_camera(camera_id)
+    console_db.unplace_camera(camera_id)
+    console_db.unlink_camera(camera_id)
+    console_db.clear_access(camera_id)
+    console_db.audit(user["username"], "camera_deleted", target=camera_id, ip=client_ip(request))
+    return JSONResponse({"status": "deleted", "id": camera_id})
 
 
 @app.post("/api/cameras/disconnect/{camera_id}")
-async def disconnect_camera(camera_id: str):
-    """
-    Disconnect an active camera feed and clean up resources cleanly.
-    """
-    found = False
-    if camera_id in state.pipelines:
+async def disconnect_camera(camera_id: str, request: Request):
+    """Backward-compatible alias for DELETE /api/cameras/{id}."""
+    return await delete_camera(camera_id, request)
+
+
+def _probe_source(cam_type: str, source: str) -> dict:
+    """Open the source and grab one frame. Runs in a worker thread."""
+    import cv2
+    started = time.monotonic()
+    if cam_type == "webcam":
         try:
-            state.pipelines[camera_id].stop()
-        except Exception as e:
-            logger.warning("[DISCONNECT] Error stopping pipeline '%s': %s", camera_id, e)
-        del state.pipelines[camera_id]
-        found = True
-
-    if camera_id in state.camera_sources:
-        try:
-            state.camera_sources[camera_id].stop()
-        except Exception as e:
-            logger.warning("[DISCONNECT] Error stopping source '%s': %s", camera_id, e)
-        del state.camera_sources[camera_id]
-        found = True
-
-    if camera_id in config.CAMERAS:
-        del config.CAMERAS[camera_id]
-        found = True
-
-    if hasattr(state, "incident_db") and state.incident_db:
-        state.incident_db.delete_system_camera(camera_id)
-
-    if not found:
-        raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
-
-    logger.info("[DISCONNECT] Camera '%s' disconnected successfully", camera_id)
-    return JSONResponse({"status": "disconnected", "id": camera_id})
+            target = int(source)
+        except ValueError:
+            return {"status": "offline", "message": "Local device source must be a device index such as 0"}
+    else:
+        target = source
+        if cam_type == "video" and not Path(source).exists():
+            return {"status": "offline", "message": f"File not found on the server: {source}"}
+    if cam_type == "rtsp":
+        os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|stimeout;5000000")
+    cap = cv2.VideoCapture(target)
+    try:
+        if not cap.isOpened():
+            return {"status": "offline", "message": "Could not open the stream. Check the address, credentials and network route."}
+        ok, frame = cap.read()
+        latency = int((time.monotonic() - started) * 1000)
+        if not ok or frame is None:
+            return {"status": "offline", "message": "Connected but no video frames were received.", "latency_ms": latency}
+        h, w = frame.shape[:2]
+        fps = cap.get(cv2.CAP_PROP_FPS) or 0
+        return {"status": "online", "message": f"Receiving video {w}×{h}" + (f" at {fps:.0f} fps" if fps else ""),
+                "latency_ms": latency, "width": w, "height": h}
+    finally:
+        cap.release()
 
 
 @app.post("/api/cameras/test-connection")
 async def test_camera_connection(request: Request):
-    """
-    Ping / test connection to an RTSP, HTTP MJPEG, or Local camera source.
-    """
+    """Probe an RTSP/HTTP stream, local device or video file and report whether frames arrive."""
+    current_user(request)
+    data = await _json_body(request)
+    cam_type = str(data.get("type", "rtsp")).lower()
+    source = str(data.get("source", "")).strip()
+    if not source:
+        return JSONResponse({"status": "error", "message": "Source URL, device index or file path is required"}, status_code=400)
     try:
-        data = await request.json()
-        cam_type = str(data.get("type", "rtsp")).lower()
-        source = str(data.get("source", "")).strip()
-
-        if not source:
-            return JSONResponse({"status": "error", "message": "Source URL or index is required"}, status_code=400)
-
-        # Webcams
-        if cam_type in ["webcam", "usb", "local"]:
-            try:
-                idx = int(source)
-                import cv2
-                cap = cv2.VideoCapture(idx)
-                opened = cap.isOpened()
-                cap.release()
-                if opened:
-                    return JSONResponse({"status": "online", "message": f"Webcam index {idx} accessible and operational", "latency_ms": 12})
-                else:
-                    return JSONResponse({"status": "offline", "message": f"Cannot open webcam index {idx}"})
-            except Exception as e:
-                return JSONResponse({"status": "offline", "message": f"Webcam test failed: {str(e)}"})
-
-        # RTSP or HTTP URL test
-        if source.startswith("rtsp://") or source.startswith("http://") or source.startswith("https://"):
-            try:
-                import cv2
-                cap = cv2.VideoCapture(source)
-                ret, _ = cap.read() if cap.isOpened() else (False, None)
-                cap.release()
-                if ret or cap.isOpened():
-                    return JSONResponse({"status": "online", "message": f"Stream ping successful. RTSP feed reachable.", "latency_ms": 45})
-                else:
-                    return JSONResponse({"status": "offline", "message": f"RTSP stream connection timeout or unreachable at {source}"})
-            except Exception as e:
-                return JSONResponse({"status": "offline", "message": f"Connection test failed: {str(e)}"})
-
-        # Fallback local file check
-        p = Path(source)
-        if p.exists():
-            return JSONResponse({"status": "online", "message": f"Local media file exists and verified ({p.name})", "latency_ms": 2})
-        return JSONResponse({"status": "online", "message": f"Stream configuration validated", "latency_ms": 25})
-
+        result = await asyncio.wait_for(asyncio.to_thread(_probe_source, cam_type, source), timeout=15)
+    except asyncio.TimeoutError:
+        result = {"status": "offline", "message": "Timed out after 15 seconds waiting for the stream."}
     except Exception as e:
         logger.error("[TEST_CONN] Error testing camera: %s", e)
-        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
-
-
-# ── User Management & Profile Endpoints ────────────────────────────────────
-
-@app.get("/api/users")
-async def get_system_users():
-    """List all registered system operators and user accounts."""
-    users = user_mgr.get_all_users()
-    return JSONResponse(users)
-
-
-@app.post("/api/users")
-async def create_system_user(request: Request):
-    """Create a new user account with detailed role, sector, and access assignment."""
-    try:
-        data = await request.json()
-        new_user = user_mgr.add_user(data)
-        return JSONResponse({"status": "success", "user": new_user}, status_code=201)
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
-    except Exception as e:
-        logger.error("[USERS] Failed to create user: %s", e)
-        raise HTTPException(status_code=500, detail="Internal server error creating user")
-
-
-@app.put("/api/users/{username}")
-async def update_system_user(username: str, request: Request):
-    """Update user account details."""
-    try:
-        data = await request.json()
-        updated = user_mgr.update_user(username, data)
-        if not updated:
-            raise HTTPException(status_code=404, detail="User not found")
-        return JSONResponse({"status": "success", "user": updated})
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("[USERS] Failed to update user '%s': %s", username, e)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.delete("/api/users/{username}")
-async def delete_system_user(username: str):
-    """Delete a user account."""
-    if username.lower() == "admin":
-        raise HTTPException(status_code=400, detail="Cannot delete default admin user account")
-    success = user_mgr.delete_user(username)
-    if not success:
-        raise HTTPException(status_code=404, detail="User not found")
-    return JSONResponse({"status": "success", "username": username})
-
+        result = {"status": "error", "message": str(e)}
+    return JSONResponse(result)
 
 
 # ── Test Video Upload & Preview Endpoints ─────────────────────────────────
 
 @app.post("/api/cameras/upload-test-video")
-async def upload_test_video(file: UploadFile = File(...)):
+async def upload_test_video(request: Request, file: UploadFile = File(...)):
     """
     Accept a 5-10 second video clip upload for testing camera and AI feeds.
     Saves to test_videos/ and returns source path for instant playback & deployment.
     """
+    require_role(request, CAMERA_ADMIN_ROLES)
     try:
         clean_name = secrets.token_hex(4) + "_" + Path(file.filename).name.replace(" ", "_")
         dest_path = config.TEST_VIDEOS_DIR / clean_name
@@ -947,6 +1091,620 @@ async def preview_test_video(filename: str):
     if not safe_path.is_relative_to(config.TEST_VIDEOS_DIR.resolve()) or not safe_path.exists():
         raise HTTPException(status_code=404, detail="Video clip not found")
     return FileResponse(str(safe_path), media_type="video/mp4")
+
+
+# ── Demo videos: stream bundled sample footage as cameras ─────────────────
+
+DEMO_VIDEOS_DIR = config.BASE_DIR / "Videos"
+_VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+# Scenario hints keyed by filename keyword: display name and the Karachi area it is shown in
+_DEMO_SCENARIOS = [
+    ("fire", "Fire & smoke — demo", "Saddar"),
+    ("gun", "Armed robbery — demo", "Clifton"),
+    ("weapon", "Armed robbery — demo", "Clifton"),
+    ("fight", "Street fight — demo", "Lyari"),
+    ("violence", "Group assault — demo", "Orangi"),
+    ("thug", "Group assault — demo", "Orangi"),
+    ("crowd", "Crowd gathering — demo", "Gulshan"),
+    ("accident", "Road accident — demo", "DHA"),
+]
+
+# Clip filename keyword → incident type the camera is "watching" for
+_CLIP_EVENT = [
+    ("fire", "fire"), ("gun", "weapon_threat"), ("weapon", "weapon_threat"),
+    ("robbery", "robbery"), ("fight", "fight"), ("violence", "fight"), ("thug", "fight"),
+    ("crowd", "crowd_crush"), ("accident", "car_accident"), ("bike", "bike_accident"),
+]
+_EVENT_LABEL = {
+    "fire": "Fire / smoke", "weapon_threat": "Weapon threat", "robbery": "Armed robbery",
+    "fight": "Physical assault", "crowd_crush": "Crowd surge", "car_accident": "Road accident",
+    "bike_accident": "Bike accident", "loitering": "Loitering",
+}
+
+
+def _event_for_source(source: str) -> str:
+    low = str(source).lower()
+    for key, event in _CLIP_EVENT:
+        if key in low:
+            return event
+    return "loitering"
+
+
+def _demo_camera_ids() -> list:
+    return [cid for cid in config.CAMERAS if cid.startswith(("grid_", "demo_", "clip_"))]
+
+
+def _demo_dirs():
+    return [("demo", DEMO_VIDEOS_DIR), ("uploads", config.TEST_VIDEOS_DIR)]
+
+
+def _demo_file(folder: str, filename: str) -> Path:
+    base = dict(_demo_dirs()).get(folder)
+    if base is None:
+        raise HTTPException(status_code=404, detail="Unknown video folder")
+    path = (base / filename).resolve()
+    if not path.is_relative_to(base.resolve()) or not path.is_file() or path.suffix.lower() not in _VIDEO_EXTS:
+        raise HTTPException(status_code=404, detail="Video not found")
+    return path
+
+
+def _demo_camera_id(folder: str, path: Path) -> str:
+    import re as _re
+    slug = _re.sub(r"[^a-z0-9]+", "_", path.stem.lower())[:40].strip("_") or "clip"
+    return f"demo_{slug}" if folder == "demo" else f"clip_{slug}"
+
+
+def _camera_for_file(path: Path) -> Optional[str]:
+    """An already-registered video camera that streams this file, if any."""
+    target = path.resolve()
+    for cid, cfg in config.CAMERAS.items():
+        if cfg.get("type") == "video":
+            try:
+                if Path(str(cfg.get("source"))).resolve() == target:
+                    return cid
+            except OSError:
+                continue
+    return None
+
+
+def _demo_meta(path: Path):
+    low = path.name.lower()
+    for key, name, area in _DEMO_SCENARIOS:
+        if key in low:
+            return name, area
+    pretty = path.stem.replace("_", " ").replace("-", " ").strip().title()[:60]
+    return f"{pretty} — demo", "Saddar"
+
+
+@app.get("/api/demo-videos")
+async def list_demo_videos(request: Request):
+    """Sample footage available to stream: bundled clips (prototype/Videos) and uploaded clips."""
+    current_user(request)
+    out = []
+    for folder, base in _demo_dirs():
+        if not base.exists():
+            continue
+        for path in sorted(base.iterdir()):
+            if not path.is_file() or path.suffix.lower() not in _VIDEO_EXTS:
+                continue
+            cam_id = _camera_for_file(path) or _demo_camera_id(folder, path)
+            name, area = _demo_meta(path)
+            out.append({
+                "folder": folder,
+                "filename": path.name,
+                "size_bytes": path.stat().st_size,
+                "suggested_name": name,
+                "suggested_area": area,
+                "camera_id": cam_id,
+                "streaming": cam_id in state.pipelines,
+                "registered": cam_id in config.CAMERAS,
+                "preview_url": f"/api/demo-videos/{folder}/{path.name}",
+            })
+    return JSONResponse(out)
+
+
+@app.get("/api/demo-videos/{folder}/{filename}")
+async def demo_video_file(folder: str, filename: str, request: Request):
+    """Serve a sample clip for in-browser preview."""
+    current_user(request)
+    return FileResponse(str(_demo_file(folder, filename)), media_type="video/mp4")
+
+
+@app.post("/api/demo-videos/deploy")
+async def deploy_demo_videos(request: Request):
+    """
+    Stream sample clips as looping cameras. Body:
+      {"videos": [{"folder": "demo", "filename": "fire.mp4", "name"?: str, "areaId"?: str, "streetId"?: str}], }
+    Omit "videos" to deploy every bundled clip. Each clip is registered, saved,
+    placed in its area (created in Karachi if missing) and started.
+    """
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    data = await _json_body(request) if (await request.body()) else {}
+    items = data.get("videos")
+    if not items:
+        items = [{"folder": "demo", "filename": p.name} for p in sorted(DEMO_VIDEOS_DIR.glob("*"))
+                 if p.is_file() and p.suffix.lower() in _VIDEO_EXTS]
+    if not items:
+        raise HTTPException(status_code=404, detail="No sample videos found in prototype/Videos")
+
+    tree = console_db.location_tree()
+    city = next((c for c in tree if c["name"].lower() == "karachi"), None) or (tree[0] if tree else None)
+    if city is None:
+        city = {**console_db.add_city("Karachi"), "areas": []}
+
+    def area_for(name: str):
+        for a in city["areas"]:
+            if a["name"].lower() == name.lower():
+                return a["id"]
+        node = console_db.add_area(city["id"], name)
+        city["areas"].append({"id": node["id"], "name": name, "streets": []})
+        return node["id"]
+
+    deployed = []
+    for item in items:
+        folder = str(item.get("folder", "demo"))
+        path = _demo_file(folder, str(item.get("filename", "")))
+        existing = _camera_for_file(path)
+        cam_id = existing or _demo_camera_id(folder, path)
+        name, area_name = _demo_meta(path)
+        if existing and not item.get("name"):
+            name = config.CAMERAS[existing].get("name") or name
+        name = str(item.get("name") or name).strip()[:120]
+        if item.get("areaId"):
+            area_id = item["areaId"]
+            city_id = next((c["id"] for c in tree for a in c["areas"] if a["id"] == area_id), city["id"])
+        else:
+            area_id, city_id = area_for(area_name), city["id"]
+        try:
+            console_db.place_camera(cam_id, city_id, area_id, item.get("streetId") or None)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"{path.name}: {e}")
+        config.CAMERAS[cam_id] = {
+            "id": cam_id, "name": name, "type": "video", "source": str(path),
+            "sector": console_db.area_name(area_id) or area_name, "enabled": True,
+        }
+        _persist_camera(cam_id)
+        console_db.set_access(cam_id, {"basis": "demo", "note": "Bundled sample footage"}, user["username"])
+        ok = cam_id in state.pipelines and state.camera_status.get(cam_id, {}).get("state") == "online"
+        if not ok:
+            ok = await asyncio.to_thread(start_camera, cam_id)
+        deployed.append({**_camera_json(cam_id), "placement": console_db.placements().get(cam_id)})
+    console_db.audit(user["username"], "demo_videos_deployed", target=", ".join(d["id"] for d in deployed),
+                     detail=f"{sum(1 for d in deployed if d['active'])}/{len(deployed)} streaming", ip=client_ip(request))
+    return JSONResponse({"deployed": deployed})
+
+
+# City-grid demo: many cameras spread across Karachi, streaming the sample clips.
+_KARACHI_GRID = {
+    "Saddar": ["Empress Market", "Abdullah Haroon Road", "Zaibunnisa Street", "Preedy Street", "Shahra-e-Liaquat"],
+    "Clifton": ["Sea View", "Boat Basin", "Do Talwar", "Bilawal Chowk", "Schon Circle"],
+    "Lyari": ["Cheel Chowk", "Lea Market", "Shah Beg Lane", "Baghdadi", "Agra Taj"],
+    "Gulshan": ["NIPA Chowrangi", "Disco Morr", "Perfume Chowk", "Civic Centre", "Millennium Mall"],
+    "Nazimabad": ["Golden Town", "Teen Hatti", "Petrol Pump", "Paposh Nagar", "Chowrangi"],
+    "Orangi": ["Banaras Chowk", "Qureshi Para", "Iqbal Market", "Sector 11", "Data Nagar"],
+    "DHA": ["Khayaban-e-Ittehad", "Khayaban-e-Shahbaz", "Phase 5 Gate", "Nishat Commercial", "Beach Avenue"],
+    "Jauhar": ["Munawar Chowrangi", "Kamran Chowrangi", "Johar Mor", "Block 15", "University Road"],
+}
+
+
+@app.post("/api/demo-videos/grid")
+async def deploy_demo_grid(request: Request):
+    """
+    Build a city-wide command-center grid: create N cameras spread across Karachi
+    areas and streets, each streaming one of the sample clips on a loop.
+    Body: {"count": 24}  (default 24, max 120).
+    """
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    data = await _json_body(request) if (await request.body()) else {}
+    try:
+        count = int(data.get("count") or 24)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="count must be a number")
+    count = max(1, min(count, 120))
+
+    clips = [p for p in sorted(DEMO_VIDEOS_DIR.glob("*")) if p.is_file() and p.suffix.lower() in _VIDEO_EXTS]
+    if not clips:
+        raise HTTPException(status_code=404, detail="No sample videos found in prototype/Videos")
+
+    tree = console_db.location_tree()
+    city = next((c for c in tree if c["name"].lower() == "karachi"), None)
+    city_id = city["id"] if city else console_db.add_city("Karachi")["id"]
+
+    # Ensure areas + streets exist, caching their ids
+    area_ids, street_ids = {}, {}
+    existing_areas = {a["name"].lower(): a for a in (city["areas"] if city else [])}
+    for area_name, streets in _KARACHI_GRID.items():
+        a = existing_areas.get(area_name.lower())
+        area_id = a["id"] if a else console_db.add_area(city_id, area_name)["id"]
+        area_ids[area_name] = area_id
+        have = {s["name"].lower(): s["id"] for s in (a["streets"] if a else [])}
+        ids = []
+        for st_name in streets:
+            ids.append(have.get(st_name.lower()) or console_db.add_street(area_id, st_name)["id"])
+        street_ids[area_name] = ids
+
+    # Spread cameras across the city: street-minor, area-major interleave
+    slots = []
+    maxlen = max(len(v) for v in _KARACHI_GRID.values())
+    for i in range(maxlen):
+        for area in _KARACHI_GRID:
+            if i < len(_KARACHI_GRID[area]):
+                slots.append((area, street_ids[area][i], _KARACHI_GRID[area][i]))
+
+    # Theme each area to a clip keyword so different areas show different incident types
+    _AREA_THEME = {
+        "Saddar": "fire", "Clifton": "gun", "Lyari": "fight", "Gulshan": "crowd",
+        "Nazimabad": "accident", "Orangi": "violence", "DHA": "gun", "Jauhar": "crowd",
+    }
+    def _clip_for_area(area_name):
+        kw = _AREA_THEME.get(area_name)
+        if kw:
+            m = next((c for c in clips if kw in c.name.lower()), None)
+            if m:
+                return m
+        return clips[hash(area_name) % len(clips)]
+
+    deployed, created_ids = [], []
+    for n in range(count):
+        area, street_id, street_name = slots[n % len(slots)]
+        clip = _clip_for_area(area)
+        cam_id = f"grid_{n + 1:03d}"
+        monitored = _EVENT_LABEL.get(_event_for_source(str(clip)), "")
+        name = f"{area} · {street_name}" + (f" — {monitored}" if monitored else "")
+        config.CAMERAS[cam_id] = {
+            "id": cam_id, "name": name, "type": "video", "source": str(clip),
+            "sector": area, "enabled": True,
+        }
+        _persist_camera(cam_id)
+        console_db.place_camera(cam_id, city_id, area_ids[area], street_id)
+        console_db.set_access(cam_id, {"basis": "demo", "note": "City-grid demo footage"}, user["username"])
+        created_ids.append(cam_id)
+
+    # Start all grid cameras in parallel
+    await asyncio.gather(*[asyncio.to_thread(start_camera, cid) for cid in created_ids])
+    for cid in created_ids:
+        deployed.append({**_camera_json(cid), "placement": console_db.placements().get(cid)})
+    online = sum(1 for d in deployed if d["active"])
+    console_db.audit(user["username"], "demo_grid_deployed", target=f"{len(deployed)} cameras",
+                     detail=f"{online}/{len(deployed)} streaming across {len(_KARACHI_GRID)} areas", ip=client_ip(request))
+    return JSONResponse({"deployed": deployed, "online": online, "areas": list(_KARACHI_GRID)})
+
+
+@app.post("/api/demo-videos/grid/clear")
+async def clear_demo_grid(request: Request):
+    """Remove every camera created by the city-grid demo."""
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    removed = [cid for cid in list(config.CAMERAS) if cid.startswith("grid_")]
+    for cid in removed:
+        stop_camera(cid)
+        config.CAMERAS.pop(cid, None)
+        state.camera_status.pop(cid, None)
+        state.incident_db.delete_system_camera(cid)
+        console_db.unplace_camera(cid)
+        console_db.clear_access(cid)
+    console_db.audit(user["username"], "demo_grid_cleared", detail=f"{len(removed)} removed", ip=client_ip(request))
+    return JSONResponse({"removed": removed})
+
+
+# ── Demo alert simulator ──────────────────────────────────────────────────
+# Generates realistic-looking incidents on demo/grid cameras so the alert feed,
+# incidents page and analytics populate live during a demonstration. Every
+# record is tagged source="demo_simulator" so it is never mistaken for a real
+# AI detection.
+
+async def _demo_simulator_loop():
+    while state.sim["running"]:
+        try:
+            cams = _demo_camera_ids()
+            if not cams:
+                await asyncio.sleep(2)
+                continue
+            cam_id = random.choice(cams)
+            cfg = config.CAMERAS.get(cam_id, {})
+            event_type = _event_for_source(cfg.get("source", ""))
+            routing = config.DEPARTMENT_ROUTING.get(event_type, {})
+            priority = routing.get("priority", "HIGH")
+            base = {"CRITICAL": 0.9, "HIGH": 0.72, "MEDIUM": 0.5, "LOW": 0.32}.get(priority, 0.6)
+            risk = round(min(0.98, max(0.3, random.gauss(base, 0.06))), 2)
+            risk_level = "CRITICAL" if risk >= 0.9 else "HIGH" if risk >= 0.7 else "MEDIUM" if risk >= 0.4 else "LOW"
+            sector = cfg.get("sector") or "Saddar"
+            label = _EVENT_LABEL.get(event_type, event_type.replace("_", " ").title())
+            description = f"{label} detected at {cfg.get('name', cam_id)} ({sector})."
+
+            incident = None
+            if state.incident_db:
+                try:
+                    incident = await asyncio.to_thread(
+                        state.incident_db.add_incident,
+                        sector=sector, event_type=event_type, risk_score=risk, risk_level=risk_level,
+                        camera_id=cam_id, source="demo_simulator", description=description,
+                    )
+                except Exception as e:
+                    logger.debug("[SIM] add_incident failed: %s", e)
+
+            await manager.broadcast({
+                "type": "NEW_ALERT",
+                "event_type": event_type,
+                "emoji": EVENT_EMOJI.get(event_type, "⚠️"),
+                "risk_score": risk,
+                "risk_level": risk_level,
+                "description": description,
+                "department": routing.get("dept", "Sindh Police"),
+                "dial": routing.get("dial", "15"),
+                "timestamp": datetime.now().isoformat(),
+                "incident_code": incident["id"] if incident else None,
+                "camera_id": cam_id,
+                "camera_name": cfg.get("name", cam_id),
+                "sector": sector,
+                "simulated": True,
+            })
+            state.sim["generated"] += 1
+        except Exception as e:
+            logger.debug("[SIM] loop error: %s", e)
+        # Jittered interval around the configured rate
+        rate = max(1, int(state.sim.get("rate_seconds", 6)))
+        await asyncio.sleep(random.uniform(rate * 0.5, rate * 1.5))
+
+
+@app.get("/api/demo-videos/simulate")
+async def demo_sim_status(request: Request):
+    current_user(request)
+    return JSONResponse({**state.sim, "demo_cameras": len(_demo_camera_ids())})
+
+
+@app.post("/api/demo-videos/simulate")
+async def demo_sim_control(request: Request):
+    """Start or stop the live demo alert simulator. Body: {"running": true, "rate_seconds": 6}."""
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    data = await _json_body(request) if (await request.body()) else {}
+    if "rate_seconds" in data:
+        try:
+            state.sim["rate_seconds"] = max(1, min(60, int(data["rate_seconds"])))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="rate_seconds must be a number")
+    running = bool(data.get("running", True))
+    if running and not _demo_camera_ids():
+        raise HTTPException(status_code=400, detail="Deploy demo cameras or a city grid first.")
+    if running and not state.sim["running"]:
+        state.sim["running"] = True
+        state.sim_task = asyncio.create_task(_demo_simulator_loop())
+        console_db.audit(user["username"], "demo_sim_started", detail=f"rate={state.sim['rate_seconds']}s", ip=client_ip(request))
+    elif not running and state.sim["running"]:
+        state.sim["running"] = False
+        if state.sim_task:
+            state.sim_task.cancel()
+            state.sim_task = None
+        console_db.audit(user["username"], "demo_sim_stopped", detail=f"generated={state.sim['generated']}", ip=client_ip(request))
+    return JSONResponse({**state.sim, "demo_cameras": len(_demo_camera_ids())})
+
+
+@app.post("/api/demo-videos/clear")
+async def clear_demo_videos(request: Request):
+    """Stop and remove every camera created from a sample clip."""
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    demo_files = {p.resolve() for _, base in _demo_dirs() if base.exists() for p in base.iterdir() if p.is_file()}
+    removed = [cid for cid, cfg in list(config.CAMERAS.items())
+               if cid.startswith(("demo_", "clip_"))
+               or (cfg.get("type") == "video" and Path(str(cfg.get("source"))).resolve() in demo_files)]
+    for cid in removed:
+        stop_camera(cid)
+        config.CAMERAS.pop(cid, None)
+        state.camera_status.pop(cid, None)
+        state.incident_db.delete_system_camera(cid)
+        console_db.unplace_camera(cid)
+    console_db.audit(user["username"], "demo_videos_cleared", detail=f"{len(removed)} removed", ip=client_ip(request))
+    return JSONResponse({"removed": removed})
+
+
+# ── Recorders & network cameras: discover, auto-detect, add in one step ─────
+
+@app.get("/api/devices/brands")
+async def device_brands(request: Request):
+    current_user(request)
+    from camera.discovery import BRANDS
+    return JSONResponse([{"id": k, "label": v["label"]} for k, v in BRANDS.items()])
+
+
+@app.get("/api/devices")
+async def list_devices(request: Request):
+    current_user(request)
+    return JSONResponse(console_db.devices())
+
+
+@app.post("/api/devices/discover")
+async def discover_devices(request: Request):
+    """Scan the local network for cameras / DVRs (ONVIF WS-Discovery + camera-port sweep)."""
+    require_role(request, CAMERA_ADMIN_ROLES)
+    data = await _json_body(request) if (await request.body()) else {}
+    from camera.discovery import discover
+    subnet = str(data.get("subnet") or "").strip() or None
+    if subnet:
+        import ipaddress as _ip
+        try:
+            net = _ip.ip_network(subnet, strict=False)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Subnet must look like 192.168.1.0/24")
+        if net.num_addresses > 1024:
+            raise HTTPException(status_code=400, detail="Scan at most a /22 at a time")
+    found = await asyncio.to_thread(discover, subnet)
+    known = {d["ip"] for d in console_db.devices()}
+    for f in found:
+        f["added"] = f["ip"] in known
+    return JSONResponse({"devices": found})
+
+
+def _probe_payload(data: dict) -> dict:
+    ip = str(data.get("ip") or "").strip()
+    import ipaddress as _ip
+    try:
+        _ip.ip_address(ip)
+    except ValueError:
+        if not re.fullmatch(r"[A-Za-z0-9.-]{1,253}", ip or ""):
+            raise HTTPException(status_code=400, detail="Enter the device IP address (e.g. 192.168.1.64) or hostname")
+    kind = "dvr" if data.get("kind") == "dvr" else "camera"
+    def _int(k, lo, hi, default):
+        try:
+            v = int(data.get(k) or default)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"{k} must be a number")
+        return max(lo, min(hi, v))
+    return {
+        "ip": ip, "kind": kind,
+        "user": str(data.get("username") or "").strip(), "pw": str(data.get("password") or ""),
+        "brand": str(data.get("brand") or "auto"),
+        "rtsp_port": _int("rtsp_port", 0, 65535, 0), "http_port": _int("http_port", 0, 65535, 0),
+        "max_channels": _int("max_channels", 1, 64, 16 if kind == "dvr" else 1),
+        "sub_stream": bool(data.get("sub_stream")),
+    }
+
+
+@app.post("/api/devices/probe")
+async def probe_device_endpoint(request: Request):
+    """
+    One-shot detection: ONVIF → brand templates → HTTP MJPEG, then a live frame
+    from every stream found. DVR/NVR: enumerates all channels.
+    """
+    require_role(request, CAMERA_ADMIN_ROLES)
+    args = _probe_payload(await _json_body(request))
+    from camera.discovery import probe_device
+    try:
+        res = await asyncio.wait_for(asyncio.to_thread(probe_device, **args), timeout=180)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Detection took too long. Try fewer channels or check the network.")
+    from dataclasses import asdict
+    return JSONResponse(asdict(res))
+
+
+@app.post("/api/devices/add")
+async def add_device(request: Request):
+    """
+    Register a camera or every selected DVR/NVR channel in one step. Body:
+      {"device": {"name","kind","brand","model","ip","username"},
+       "streams": [{"channel": 1, "url": "rtsp://…", "name": "Gate"}],
+       "location": {"cityId","areaId","streetId"?}}
+    Each stream becomes a camera: saved, placed, linked to the device and started.
+    """
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    data = await _json_body(request)
+    dev = data.get("device") or {}
+    streams = [s for s in (data.get("streams") or []) if str(s.get("url") or "").strip()]
+    if not streams:
+        raise HTTPException(status_code=400, detail="Select at least one stream to add")
+    if len(streams) > 64:
+        raise HTTPException(status_code=400, detail="At most 64 channels per device")
+    ip = str(dev.get("ip") or "").strip()
+    kind = "dvr" if dev.get("kind") == "dvr" else "camera"
+    loc = data.get("location") or {}
+    if not loc.get("areaId"):
+        raise HTTPException(status_code=400, detail="Choose the area where this device is installed")
+    try:
+        access = console_db.validate_access(data.get("access"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    device = console_db.save_device(
+        name=str(dev.get("name") or (f"DVR {ip}" if kind == "dvr" else f"Camera {ip}")).strip()[:120],
+        kind=kind, brand=str(dev.get("brand") or ""), model=str(dev.get("model") or ""), ip=ip,
+        username=str(dev.get("username") or ""), channels=len(streams),
+    )
+    sector = console_db.area_name(loc["areaId"]) or ""
+    base = re.sub(r"[^a-z0-9]+", "_", ip.lower()).strip("_")
+    created = []
+    for st_ in streams:
+        ch = int(st_.get("channel") or 1)
+        url = str(st_["url"]).strip()
+        if not url.startswith(("rtsp://", "rtsps://", "http://", "https://")):
+            raise HTTPException(status_code=400, detail=f"Channel {ch}: invalid stream URL")
+        # Re-adding the same device/channel updates the existing camera instead of duplicating it
+        existing = next((cid for cid, link in console_db.camera_devices().items()
+                         if link["device_id"] == device["id"] and link["channel"] == ch), None)
+        cam_id = existing or (f"{'dvr' if kind == 'dvr' else 'ipc'}_{base}_ch{ch}" if kind == "dvr" else f"ipc_{base}")
+        name = str(st_.get("name") or (f"{device['name']} · CH{ch:02d}" if kind == "dvr" else device["name"])).strip()[:120]
+        config.CAMERAS[cam_id] = {"id": cam_id, "name": name, "type": "rtsp", "source": url, "sector": sector, "enabled": True}
+        _persist_camera(cam_id)
+        try:
+            console_db.place_camera(cam_id, loc.get("cityId"), loc["areaId"], loc.get("streetId") or None)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        console_db.link_camera(cam_id, device["id"], ch)
+        console_db.set_access(cam_id, access, user["username"])
+        created.append(cam_id)
+
+    # Start all channels in parallel (each source connects and self-heals in its own thread)
+    await asyncio.gather(*[asyncio.to_thread(start_camera, cid) for cid in created])
+    cams = [_camera_json(cid) for cid in created]
+    online = sum(1 for c in cams if c["status"] == "online")
+    console_db.audit(user["username"], "device_added", target=device["id"],
+                     detail=f"basis={access['basis']} {kind} {ip}: {online}/{len(cams)} channels online", ip=client_ip(request))
+    return JSONResponse({"device": device, "cameras": cams, "online": online}, status_code=201)
+
+
+@app.get("/api/access/bases")
+async def access_bases(request: Request):
+    """Lawful bases a camera's access can be recorded under."""
+    current_user(request)
+    from web.console_db import BASES_NEEDING_OWNER, BASES_NEEDING_REFERENCE
+    return JSONResponse([
+        {"id": k, "label": v, "needs_owner": k in BASES_NEEDING_OWNER, "needs_reference": k in BASES_NEEDING_REFERENCE}
+        for k, v in ACCESS_BASES.items()
+    ])
+
+
+@app.get("/api/cameras/{camera_id}/access")
+async def get_camera_access(camera_id: str, request: Request):
+    current_user(request)
+    if camera_id not in config.CAMERAS:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    return JSONResponse(console_db.get_access(camera_id) or {})
+
+
+@app.put("/api/cameras/{camera_id}/access")
+async def set_camera_access(camera_id: str, request: Request):
+    """Record / update the lawful basis for accessing this camera."""
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    if camera_id not in config.CAMERAS:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    data = await _json_body(request)
+    try:
+        grant = console_db.set_access(camera_id, data, user["username"])
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # Re-granting access to a previously revoked camera lets it stream again
+    if config.CAMERAS[camera_id].get("enabled"):
+        await asyncio.to_thread(start_camera, camera_id)
+    console_db.audit(user["username"], "access_granted", target=camera_id,
+                     detail=f"basis={grant['basis']} ref={grant.get('reference') or '—'}", ip=client_ip(request))
+    return JSONResponse(grant)
+
+
+@app.post("/api/cameras/{camera_id}/access/revoke")
+async def revoke_camera_access(camera_id: str, request: Request):
+    """Withdraw access: the camera stops streaming and is blocked until re-granted."""
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    if camera_id not in config.CAMERAS:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    if not console_db.revoke_access(camera_id, user["username"]):
+        raise HTTPException(status_code=400, detail="No active access grant to revoke")
+    stop_camera(camera_id)
+    _set_cam_status(camera_id, "revoked", f"Access revoked by {user['username']}")
+    console_db.audit(user["username"], "access_revoked", target=camera_id, ip=client_ip(request))
+    return JSONResponse(_camera_json(camera_id))
+
+
+@app.delete("/api/devices/{device_id}")
+async def delete_device(device_id: str, request: Request):
+    """Remove a recorder / camera device and all of its channel cameras."""
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    cams = console_db.delete_device(device_id)
+    for cid in cams:
+        stop_camera(cid)
+        config.CAMERAS.pop(cid, None)
+        state.camera_status.pop(cid, None)
+        state.incident_db.delete_system_camera(cid)
+        console_db.unplace_camera(cid)
+        console_db.clear_access(cid)
+    console_db.audit(user["username"], "device_deleted", target=device_id, detail=f"{len(cams)} cameras removed", ip=client_ip(request))
+    return JSONResponse({"status": "deleted", "cameras": cams})
 
 
 # ── Innovation 4: VisionGuard Prediction Engine ───────────────────────────
@@ -1200,8 +1958,10 @@ async def record_heatmap_incident(request: Request):
 
 
 @app.post("/api/heatmaps/clear")
-async def clear_heatmap_database():
+async def clear_heatmap_database(request: Request):
     """Clear all incident database records completely."""
+    admin = require_role(request, {"Super Admin"})
+    console_db.audit(admin["username"], "incidents_cleared", ip=client_ip(request))
     if hasattr(state, "incident_db") and state.incident_db:
         state.incident_db.clear()
         return JSONResponse({"status": "success", "message": "Incident database cleared completely."})
@@ -1281,11 +2041,22 @@ async def get_specialist_telemetry():
             "violence_fps": t.get("violence", {}).get("fps", 0.0),
         }
 
-    import psutil
-    import torch
-    cuda_available = torch.cuda.is_available()
-    vram_mb = round(torch.cuda.memory_allocated(0) / (1024 * 1024), 1) if cuda_available else 0.0
-    cpu_percent = round(psutil.cpu_percent(interval=None), 1)
+    cuda_available, vram_mb, cpu_percent, gpu_name = False, 0.0, 0.0, "CPU"
+    mem_percent = 0.0
+    try:
+        import psutil
+        cpu_percent = round(psutil.cpu_percent(interval=None), 1)
+        mem_percent = round(psutil.virtual_memory().percent, 1)
+    except ImportError:
+        pass
+    try:
+        import torch
+        cuda_available = torch.cuda.is_available()
+        if cuda_available:
+            vram_mb = round(torch.cuda.memory_allocated(0) / (1024 * 1024), 1)
+            gpu_name = torch.cuda.get_device_name(0)
+    except ImportError:
+        pass
 
     return JSONResponse({
         "specialists": spec_data,
@@ -1297,37 +2068,38 @@ async def get_specialist_telemetry():
         "hardware": {
             "vram_mb": vram_mb,
             "cpu_percent": cpu_percent,
-            "gpu_name": torch.cuda.get_device_name(0) if cuda_available else "CPU",
+            "gpu_name": gpu_name,
+            "ram_percent": mem_percent,
         },
         "active_cameras": len(state.pipelines),
     })
 
 
-@app.post("/api/login")
-async def api_login(request: Request):
-    """Authenticate operator credentials."""
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
-    username = data.get("username", "").strip()
-    password = data.get("password", "").strip()
-
-    # Accept default admin/visionguard or config credentials
-    correct_user = (username == config.WEB_USERNAME or username == "admin")
-    correct_pass = (password == config.WEB_PASSWORD or password == "visionguard" or password == "admin")
-
-    if correct_user and correct_pass:
-        return JSONResponse({"status": "success", "user": username or "operator"})
-    
-    raise HTTPException(status_code=401, detail="Invalid operator credentials")
+@app.get("/api/health")
+async def health():
+    """Unauthenticated liveness probe."""
+    return {"status": "online", "cameras": len(config.CAMERAS), "streaming": len(state.pipelines)}
 
 
 @app.get("/api/status")
 async def get_status():
     """Get System Status Summary."""
     summary = state.event_engine.get_status_summary() if state.event_engine else {}
-    summary["ai_fps"] = (
+    # Merge alerts from every camera's own event engine
+    fps = []
+    for cam_pipe in list(state.pipelines.values()):
+        eng = cam_pipe.event_engine
+        if eng is not None and eng is not state.event_engine:
+            cam_sum = eng.get_status_summary()
+            summary["active_alerts"] = summary.get("active_alerts", 0) + cam_sum.get("active_alerts", 0)
+            summary["total_alerts_today"] = summary.get("total_alerts_today", 0) + cam_sum.get("total_alerts_today", 0)
+            for a in cam_sum.get("alerts", []):
+                a["camera"] = cam_pipe.camera_name
+            summary.setdefault("alerts", []).extend(cam_sum.get("alerts", []))
+        la = getattr(cam_pipe.pipeline, "_last_analysis", None)
+        if la is not None:
+            fps.append(la.ai_fps)
+    summary["ai_fps"] = round(sum(fps) / len(fps), 1) if fps else (
         state.pipeline._last_analysis.ai_fps
         if (state.pipeline and state.pipeline._last_analysis) else 0.0
     )
@@ -1361,26 +2133,23 @@ async def get_evidence_file(filename: str):
 async def voice_command(request: Request):
     """
     Accept a natural language text command from the operator.
-    Returns the parsed action and execution result.
+    Returns the parsed action and execution result; the exchange is logged.
     """
-    body = await request.json()
-    text = body.get("text", "").strip()
+    user = current_user(request)
+    body = await _json_body(request)
+    text = str(body.get("text", "")).strip()[:500]
     if not text:
         raise HTTPException(status_code=400, detail="Missing 'text' field")
-
-    command, result_text = _run_voice_command(text)
-
-    return JSONResponse({
-        "command": command,
-        "response": result_text,
-    })
+    command, result_text = await asyncio.to_thread(_run_voice_command, text, user["username"])
+    return JSONResponse({"command": command, "response": result_text})
 
 
-def _run_voice_command(text: str):
+def _run_voice_command(text: str, username: str = "operator"):
     """Interpret + execute a natural-language operator command.
 
     Shared by the REST (/api/voice) and WebSocket (/ws/voice) endpoints.
-    Uses the persistent interpreter loaded at startup (Day 5 — Rafay).
+    Alert confirmations/dismissals are also applied to the incident database,
+    and every exchange is written to the voice log.
     """
     from voice.executor import CommandExecutor
 
@@ -1393,13 +2162,36 @@ def _run_voice_command(text: str):
         state.interpreter = interpreter
 
     command = interpreter.interpret(text)
+    action = command.get("action", "unknown")
 
     result_text = ""
     if state.event_engine:
         executor = CommandExecutor(state.event_engine)
         result_text = executor.execute(command)
+    else:
+        result_text = command.get("clarification_question") or "Event engine is offline."
 
+    # Mirror alert decisions into the persistent incident workflow
+    if action in ("confirm_alert", "dismiss_alert"):
+        latest = console_db.latest_open_incident()
+        if latest:
+            console_db.update_incident(latest["incident_code"], username,
+                                       "acknowledge" if action == "confirm_alert" else "false_alarm",
+                                       note=f"By voice: {text}")
+            verb = "acknowledged" if action == "confirm_alert" else "closed as false alarm"
+            result_text = f"{result_text} Incident {latest['incident_code']} {verb}.".strip()
+
+    console_db.log_voice(username, text, action, result_text, "backend")
     return command, result_text
+
+
+async def _ws_user(websocket: WebSocket):
+    """Resolve the operator for a WebSocket (token passed as ?token=)."""
+    token = websocket.query_params.get("token", "")
+    user = console_db.session_user(token) if token else None
+    if user is None and not config.API_AUTH_REQUIRED:
+        user = console_db.get_user("admin")
+    return user
 
 
 # ── WebSocket ─────────────────────────────────────────────────────────────
@@ -1407,6 +2199,9 @@ def _run_voice_command(text: str):
 @app.websocket("/ws/alerts")
 async def websocket_alerts_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time alert pushes to UI."""
+    if await _ws_user(websocket) is None:
+        await websocket.close(code=4401)
+        return
     await manager.connect(websocket)
 
     # Send initial status packet
@@ -1436,6 +2231,10 @@ async def websocket_voice_endpoint(websocket: WebSocket):
     against the live event engine, and the response is returned as JSON:
         {"type": "VOICE_RESPONSE", "command": {...}, "response": "..."}
     """
+    user = await _ws_user(websocket)
+    if user is None:
+        await websocket.close(code=4401)
+        return
     await websocket.accept()
     await websocket.send_json({"type": "VOICE_READY", "status": "connected"})
 
@@ -1457,7 +2256,7 @@ async def websocket_voice_endpoint(websocket: WebSocket):
                 continue
 
             try:
-                command, result_text = _run_voice_command(text)
+                command, result_text = await asyncio.to_thread(_run_voice_command, text, user["username"])
                 await websocket.send_json({
                     "type": "VOICE_RESPONSE",
                     "text": text,
