@@ -1,243 +1,252 @@
-# 🛡️ VisionGuard ULTRA — Solo Presenter Playbook
-**One person tells the whole story: pitch → demo → technical depth → Q&A → any situation.**
+# 🛡️ VisionGuard ULTRA — Guide for One Presenter
+**One person tells the full story: talk → show demo → explain → answer questions.**
 
-> Use this when only one person is presenting (judges at the booth, a viva, a short online call, or when teammates are absent).
+> Simple English is used. Hard words have Urdu meaning in brackets, like this: *detect (پتا لگانا)*.
 
 ---
 
-## Introduction
+## Introduction (تعارف)
 
-### What this document is
-This is the complete playbook for **one presenter** to pitch, demo and defend **VisionGuard ULTRA** alone — at a judge's booth, on stage, in a viva or on an online call. Read it top to bottom once, rehearse with sections 2 and 4, and carry the cue card (section 7).
+### What is this document?
+This is a guide for **one person** who will present (پیش کرنا) VisionGuard ULTRA alone. You can use it with judges at the stall, on stage, in a viva, or on an online call.
+Read it fully one time. Then practice (مشق) sections 2 and 4 out loud. Keep the small card (section 7) in your pocket.
 
-### The project in 30 seconds
-**VisionGuard ULTRA** is a real-time AI system that turns ordinary CCTV cameras into an active **AI City Brain**. It detects emergencies — fire, fights, weapons, crowd surges, road accidents and abandoned objects — scores the risk from 0 to 100, saves tamper-proof (SHA-256) evidence, and routes the alert to the right helpline (Police 15, Fire 16, Rescue 1122). It was built by Abdul Rafay, Moiz, Areeba and Aqib for the Alibaba AI Hackathon 2026.
+### Our project in 30 seconds
+**VisionGuard ULTRA** is an AI system. It makes normal CCTV cameras smart.
+- It can **detect (پتا لگانا)** fire, fights, guns, big crowds, road accidents, and bags left alone.
+- It gives a **risk score (خطرے کا نمبر)** from 0 to 100.
+- It saves the video as **evidence (ثبوت)** that nobody can change secretly.
+- It sends the alert to the right number: **Police 15, Fire 16, Rescue 1122**.
+
+Made by Abdul Rafay, Moiz, Areeba and Aqib for the Alibaba AI Hackathon 2026.
 
 ### How to introduce yourself (say this first)
-> "Assalam-o-Alaikum / Good morning. My name is **[Your Name]**, and I'm the **[your role]** of team **VisionGuard**. Our team is Abdul Rafay, Moiz, Areeba and Aqib. In the next few minutes I'll show you how we turn passive CCTV cameras into a system that **detects, decides and dispatches** emergencies in real time."
+> "Assalam-o-Alaikum. My name is **[your name]**. I am the **[your role]** in team **VisionGuard**. My team is Abdul Rafay, Moiz, Areeba and Aqib. Today I will show you how we make normal CCTV cameras smart. Our system can **find a problem, decide, and send help** — very fast."
 
-Tips: smile, say your name slowly, keep the intro under 15 seconds, then go straight to the hook.
+Tips: Smile. Say your name slowly. Keep it short (15 seconds).
 
-### How to use this playbook
-| If you have… | Read |
+### How to use this guide
+| If you have… | Read this |
 |---|---|
-| 5 minutes | Section 7 (cue card) + Section 4 (demo failures) |
-| 30 minutes | Sections 1, 2, 5 and 7 |
-| A full day | Everything, and rehearse Q&A (section 3) aloud with a friend |
+| 5 minutes | Section 7 (small card) + Section 4 (if demo breaks) |
+| 30 minutes | Sections 1, 2, 5, 7 |
+| One full day | Everything. Practice questions (section 3) with a friend. |
 
 ---
 
-## 0. Before You Walk In (Checklist — 30 min before)
+## 0. Before You Start — Checklist (30 minutes before)
 
-| ✅ | Item |
+| ✅ | Thing to check |
 |---|---|
-| ☐ | Laptop charged + charger plugged in. Power saving **off**, notifications **off** (Do Not Disturb). |
-| ☐ | Backend running: `python prototype/run_web.py` → open `http://localhost:8000/docs` once to confirm. |
-| ☐ | Frontend running: `cd frontend && npm run dev` → open `http://localhost:5173`, log in once. |
-| ☐ | Desktop Studio tested: `python prototype/visionguard_app.py` and play `fire.mp4` once (warms GPU / model cache). |
-| ☐ | **Backup screen recording** of a full demo saved on the desktop AND on a USB / phone. |
-| ☐ | Demo videos present in `prototype/Videos/` (fire, fighting, gun, crowded, thugs). |
-| ☐ | Browser tabs pre-opened in order: Dashboard → Live View → Incidents → Registry. Close everything else. |
-| ☐ | Screen zoom 110–125% so judges can read from 2 m away. |
-| ☐ | Water bottle. Phone on silent. |
+| ☐ | Laptop is fully charged. Charger is plugged in. Notifications are off. |
+| ☐ | Start backend (سرور): `python prototype/run_web.py`. Open `http://localhost:8000/docs` to check. |
+| ☐ | Start website: `cd frontend && npm run dev`. Open `http://localhost:5173` and log in. |
+| ☐ | Open the desktop app one time: `python prototype/visionguard_app.py` and play `fire.mp4` (so it is ready and fast). |
+| ☐ | **Backup video (متبادل ویڈیو)** of the full demo is saved on laptop, USB and phone. |
+| ☐ | Demo videos are in `prototype/Videos/` (fire, fighting, gun, crowded, thugs). |
+| ☐ | Browser tabs are open in this order: Dashboard → Live View → Incidents → Registry. Close other tabs. |
+| ☐ | Screen zoom is 110–125%, so judges can read. |
+| ☐ | Water bottle with you. Phone on silent. |
 
-**Mental rule:** *The demo is a support, the story is the product.* If the demo dies, the story still wins.
+**Remember:** The demo only helps. Your **story** is the main thing. If the demo stops, your story can still win.
 
 ---
 
-## 1. The Structure (Memorize This Skeleton)
+## 1. The Plan (remember this order)
 
 ```
 HOOK (20s) → PROBLEM (40s) → SOLUTION (40s) → LIVE DEMO (2–3 min)
-→ HOW IT WORKS (1 min) → IMPACT & ROADMAP (30s) → CLOSE (15s) → Q&A
+→ HOW IT WORKS (1 min) → BENEFIT & FUTURE (30s) → END (15s) → QUESTIONS
 ```
 
-Pick the length you're given:
+**Hook (ہُک)** = the first line that catches attention (توجہ کھینچنا).
 
-| Time slot | What to keep |
+Change length by your time:
+
+| Time you get | What to say |
 |---|---|
-| **1 min (elevator)** | Hook + Problem (1 line) + Solution + 1 demo clip (fire or gun) + Close |
-| **3 min (booth / judges)** | Everything below, demo = 2 clips |
-| **5–7 min (stage)** | Everything + 3–4 clips + architecture slide + roadmap |
-| **10+ min (viva / deep dive)** | Everything + code walkthrough (`pipeline.py`, `events/engine.py`) + data-science section |
+| **1 minute** | Hook + 1 line problem + solution + 1 video (fire or gun) + end |
+| **3 minutes** | Full plan below, show 2 videos |
+| **5–7 minutes** | Full plan + 3–4 videos + system diagram + future plans |
+| **10+ minutes (viva)** | Everything + show code (`pipeline.py`, `events/engine.py`) + data part |
 
 ---
 
-## 2. The Script — Step by Step
+## 2. What to Say — Step by Step
 
-### Step 1 — Hook (≈20 s)
-> "Karachi has over 20 million people and thousands of CCTV cameras. Almost all of them are just **recording** — nobody is really **watching**. Research on CCTV operators shows attention collapses after around 20 minutes of watching video walls. So the camera sees the crime… and nobody reacts."
+### Step 1 — Hook (about 20 seconds)
+> "Karachi has more than 20 million people and thousands of CCTV cameras. But these cameras only **record**. Nobody is really **watching**. A person watching screens gets tired after about 20 minutes. So the camera sees the crime… but nobody acts."
 
-**Tip:** Pause after "nobody reacts." Make eye contact.
+**Tip:** Stop for 2 seconds after "nobody acts". Look at the judges.
 
-### Step 2 — Problem (≈40 s)
-- Passive CCTV = evidence **after** the crime, not prevention.
-- Human operators get fatigued; one person cannot watch 50 screens.
-- Emergency response is delayed because someone first has to *notice* and then *call* (15 / 16 / 1122).
-- Threats are diverse: street fights, armed robbery, fires, crowd surges, road accidents, abandoned bags.
+### Step 2 — Problem (مسئلہ) (about 40 seconds)
+- Normal CCTV only shows the crime **after** it happens. It does not stop it.
+- People who watch screens get tired. One person cannot watch 50 screens.
+- Help comes late, because first someone must see it, then call 15 / 16 / 1122.
+- There are many dangers: fights, robbery, fire, big crowds, accidents, bags left alone.
 
-### Step 3 — Solution (≈40 s)
-> "**VisionGuard ULTRA** turns existing cameras into an active **AI City Brain**. It watches every feed at the same time, detects emergencies like fire, fights, weapons, crowd surges, accidents and abandoned objects in real time, scores the risk, saves tamper-proof evidence, and routes the alert to the right department — Police 15, Fire Brigade 16, Rescue 1122."
+### Step 3 — Solution (حل) (about 40 seconds)
+> "**VisionGuard ULTRA** makes cameras smart. It watches all cameras at the same time. It finds fire, fights, guns, crowds, accidents and left bags in **real time (فوری طور پر)**. It gives a risk score, saves the proof, and sends the alert to the right place — Police 15, Fire 16, Rescue 1122."
 
-Three words to repeat: **Detect → Decide → Dispatch.**
+Repeat these three words: **Detect → Decide → Dispatch** (پتا لگاؤ → فیصلہ کرو → مدد بھیجو).
 
-### Step 4 — Live Demo (2–3 min) — exact order
+### Step 4 — Live Demo (2–3 minutes)
 
-| # | Action on screen | What you say |
+| # | What you click | What you say |
 |---|---|---|
-| 1 | Open **Dashboard** (camera grid). | "This is the operator command center. Every tile is a live feed being analysed by AI right now." |
-| 2 | Play **`fire.mp4`**. Wait for red box / alert. | "Fire and smoke detected by our fine-tuned fire model. It must persist across frames before it alerts — that's how we avoid flicker false alarms. It's routed to **Fire Brigade 16**." |
-| 3 | Play **`gun.mp4`** or **`fighting.mp4`**. | "Here a weapon / fight. For fights we use 17-point pose skeletons — we measure how fast arms move, then a second violence classifier confirms. Two stages = fewer false alarms." |
-| 4 | Point at **risk score** + alert feed. | "Each event gets a 0–100 risk score, so the operator sees the most dangerous thing first." |
-| 5 | Open **Incidents** page. | "Every incident gets an evidence clip with a **SHA-256 hash** — if anyone edits the video, the hash no longer matches. That's court-ready evidence." |
-| 6 | (Optional) **Voice command**: "What is going on?" | "Operators can just talk to the system — hands-free control." |
-| 7 | (Optional) **`crowded.mp4`** | "Crowd density and flow — early warning for stampedes." |
+| 1 | Open **Dashboard** (camera grid) | "This is the control room screen. AI is checking every camera right now." |
+| 2 | Play **`fire.mp4`**, wait for red box | "It found fire and smoke. It checks for a few seconds first, so it does not give a **false alarm (غلط الارم)**. Alert goes to **Fire Brigade 16**." |
+| 3 | Play **`gun.mp4`** or **`fighting.mp4`** | "Here is a gun / a fight. For fights, we see 17 points on the body (skeleton / ڈھانچہ). If the arms move very fast, a second model checks it again. Two checks = fewer mistakes." |
+| 4 | Point at **risk score** and alert list | "Every event gets a score from 0 to 100. The most dangerous one is always on top." |
+| 5 | Open **Incidents** page | "Every event saves a video clip as **evidence (ثبوت)**. We add a **SHA-256 hash** — a digital fingerprint (ڈیجیٹل انگوٹھے کا نشان). If someone changes the video, the fingerprint will not match." |
+| 6 | (Optional) Say **"What is going on?"** | "The operator can talk to the system. No need to click." |
+| 7 | (Optional) **`crowded.mp4`** | "It checks crowd size and movement, to warn before a **stampede (بھگدڑ)**." |
 
-**Golden demo rules**
-- Narrate *what the judge should look at* ("look at the top-left — the box turned red").
-- Never say "it usually works." If something is slow, say "while the model warms up, let me explain what it's doing…"
-- Max 2–3 clips in a 3-min pitch. Depth beats breadth.
+**Demo rules:**
+- Tell the judge where to look: "Look at the top left. The box is red now."
+- Never say "it usually works". If it is slow, say: "While it loads, let me explain what it is doing…"
+- Only 2–3 videos in a 3-minute talk. Show less, explain better.
 
-### Step 5 — How It Works (≈1 min)
-Draw / show this:
+### Step 5 — How It Works (about 1 minute)
+Show or draw this:
 
 ```
 CAMERAS / MIC / SOS
       ↓
-YOLOv8 detection → ByteTrack tracking → YOLOv8-Pose (17 keypoints)
-      ↓                    ↓
-Specialist models (fire/smoke, weapon, violence)
+YOLOv8 (finds objects) → ByteTrack (follows each person) → Pose (17 body points)
       ↓
-Event Engine (12 rule-based detectors, temporal checks) → Risk score 0–100
+Special models (fire/smoke, gun, fight)
       ↓
-Dispatch routing · SHA-256 evidence · React dashboard · AI briefing
+Event Engine (12 checks, over time) → Risk score 0–100
+      ↓
+Send alert · Save evidence · Show on dashboard · AI short report
 ```
 
-Key points:
-1. **Decoupled async pipeline** — display thread and AI thread are separate, so video never freezes even if AI is busy.
-2. **Two-stage verification** — cheap signal first (pose / detection), expensive confirmation second (classifier) → fewer false alarms.
-3. **Temporal persistence** — an event must last for a period of time, not one frame.
-4. **Edge-friendly** — designed to run on a modest GPU (tested on NVIDIA Quadro T1000, 4 GB).
+Main points:
+1. **Two parts run separately (الگ الگ)** — video shows on one side, AI works on the other side. So the video never freezes (رکتی نہیں).
+2. **Two checks** — first a quick check, then a strong check. This means fewer false alarms.
+3. **Time check** — the event must continue for some time, not only one frame (تصویر).
+4. **Works on a small computer** — tested on an NVIDIA Quadro T1000 graphics card (4 GB).
 
-### Step 6 — Impact & Roadmap (≈30 s)
-- **Impact:** faster response, less operator fatigue, reuse of existing cameras (no new hardware for cities).
-- **Roadmap:** live RTSP city deployment pilot, more sectors (hospitals – fall detection, schools, industrial safety — see `prototype/MULTI_SECTOR_EXPANSION_PLAN.md`), real dispatch API integration, more local (Karachi) training data.
+### Step 6 — Benefit & Future (فائدہ اور مستقبل) (about 30 seconds)
+- **Benefit:** help comes faster, workers get less tired, cities can use the cameras they already have. No new cameras needed.
+- **Future:** test it on real city cameras, use it in hospitals, schools and factories (see `prototype/MULTI_SECTOR_EXPANSION_PLAN.md`), connect directly to the helplines, collect more local Karachi data.
 
-### Step 7 — Close (≈15 s)
-> "Cameras already exist. VisionGuard gives them a brain. **Detect, decide, dispatch — in under a second.** Thank you — I'd love to take your questions."
+### Step 7 — End (about 15 seconds)
+> "Cameras are already there. VisionGuard gives them a brain. **Find, decide, send help — in less than one second.** Thank you. We are happy to take your questions."
 
-Then **stop talking**. Silence invites questions.
+Then **stop talking**. Silence (خاموشی) invites questions.
 
 ---
 
-## 3. Q&A Masterclass
+## 3. Questions and Answers (سوال و جواب)
 
-### 3.1 The Method — use for EVERY question (L.A.B.)
-1. **Listen** fully. Don't interrupt. Nod.
-2. **Acknowledge**: "Great question" / "That's an important concern."
-3. **Bridge**: answer in 1–3 sentences, then bridge back to a strength ("…and that's exactly why we built the two-stage verifier").
+### 3.1 The easy method for every question — L.A.B.
+1. **Listen (سنیں)** — listen to the full question. Do not interrupt (بیچ میں نہ بولیں).
+2. **Accept (مانیں)** — say "Good question" or "That is an important point."
+3. **Bring back (واپس لائیں)** — answer in 1–3 short lines, then go back to a strong point of the project.
 
-Keep answers **under 30 seconds** unless they ask for more.
+Keep each answer **under 30 seconds**.
 
-### 3.2 Expected Questions & Model Answers
+### 3.2 Common questions and simple answers
 
-**Technical**
+**Technical questions (تکنیکی سوالات)**
 
-| Question | Answer |
+| Question | Simple answer |
 |---|---|
-| Why YOLOv8 and not a Transformer (RT-DETR) / Faster R-CNN? | Real-time edge budget. YOLOv8s is fast, light on VRAM, one ecosystem for detection, pose and classification. Faster R-CNN is too slow for multiple live streams; transformers need more compute. |
-| How do you handle false alarms (hugging, playing, sports)? | Three layers: (1) pose velocity triggers, (2) a separate violence classifier confirms on the person crop, (3) the event must persist over time. Plus per-event confidence thresholds in `config.py`. |
-| What FPS / latency? | 24–30 FPS display on a Quadro T1000 (4 GB), AI processing ~28–42 ms per frame, alert under ~300 ms. *(Say "on our test hardware".)* |
-| What datasets did you train on? | Violence: RWF-2000 + Real Life Violence + CCTV violence datasets. Fire/smoke: D-Fire. Weapons: public weapon datasets. Trained on Colab T4 GPUs. Data cleaned with our corrupt-file scanner and augmented (blur, weather) with Albumentations. |
-| What's your accuracy? | Answer honestly with the numbers in `prototype/data_science/ML_Evaluation_Report.md`. If a metric isn't final: "We're finalising the formal validation report; on our demo scenarios it detects reliably, and we've designed the pipeline to verify before alerting." |
-| How does tracking work? | ByteTrack — Kalman filter + IoU association, gives each person/vehicle a stable ID so we can measure loitering time, abandoned objects, velocity. |
-| How is the abandoned-object detection done? | Bag tracked by ID; if it's stationary and its owner is no longer nearby for longer than a threshold, alert. |
-| How do you scale to 1000 cameras? | Each camera is an independent stream worker; scale horizontally with more edge GPU nodes; the central dashboard only receives events + thumbnails, not full video. |
-| What does Gemini / the LLM do? | Turns structured events into a short human-readable briefing and parses voice commands into actions. Detection itself does **not** depend on the LLM — there's an offline fallback. |
-| What if the internet goes down? | Detection runs locally on the edge. Only the AI narration/voice parsing uses the cloud, and it falls back to offline rules. |
+| Why YOLOv8 and not a Transformer (RT-DETR) or Faster R-CNN? | YOLOv8 is fast and needs less memory. Faster R-CNN is too slow for many live cameras. Transformers need a stronger computer. YOLOv8 can do objects, body points and classification in one tool. |
+| What about false alarms? Hugging, playing, sports? | We use three steps: (1) fast arm movement starts a check, (2) a second model checks the person again, (3) the event must continue for some time. We can also change the limits in `config.py`. |
+| How fast is it? | 24–30 frames per second. AI takes about 28–42 ms for one frame. The alert comes in less than 300 ms (less than one third of a second). Say: "on our test computer". |
+| Which data did you use? | Fight: RWF-2000 and other violence video sets. Fire/smoke: D-Fire. Guns: public weapon image sets. We trained on Google Colab (T4 GPU). We removed broken files and added blur and rain effects to look like real CCTV. |
+| How accurate (درست) is it? | Only tell numbers from `prototype/data_science/ML_Evaluation_Report.md`. If they are not ready, say: "We are still finishing the final test report. In our demo videos it works well, and the system checks two times before it gives an alert." |
+| How does tracking (پیچھا کرنا) work? | ByteTrack gives each person or car a fixed ID number. So we can see how long someone stays, if a bag is left, and how fast things move. |
+| How do you find a left bag? | We follow the bag by its ID. If it does not move and its owner is gone for some time, we give an alert. |
+| Can it work with 1000 cameras? | Yes. Each camera works on its own. We add more small GPU computers. The main server only gets alerts and small pictures, not full video. |
+| What does Gemini (the LLM) do? | It writes a short report in normal language, and it understands voice commands. Finding the danger does **not** need Gemini. |
+| What if internet stops? | Detection works on the local computer. Only the voice and report part uses internet, and it has an offline backup. |
 
-**Ethics / Privacy / Legal**
+**Privacy and ethics questions (رازداری اور اخلاقیات)**
 
-| Question | Answer |
+| Question | Simple answer |
 |---|---|
-| Isn't this mass surveillance? | It's **behavioural, not biometric** — we detect events (fire, fight, weapon), we don't identify who someone is. No face-recognition database. |
-| Bias? | We detect actions and objects, not identity or appearance. Still, we plan to add more local data and measure performance per scenario (lighting, crowd density). |
-| Who sees the data? Evidence misuse? | Role-based login on the dashboard; evidence is hashed (SHA-256) so tampering is detectable; retention policies set by the deploying authority. |
-| A false alert sends police wrongly? | The system **recommends** dispatch with a risk score; in deployment a human operator confirms high-impact actions. AI assists, humans decide. |
+| Is this spying (جاسوسی) on everyone? | No. We check **actions**, not **who** the person is. We do not use face recognition. We do not keep a face database. |
+| Is it biased (جانبدار)? | We look at actions and objects, not skin, face or clothes. We still want more local data and more testing in different light and crowds. |
+| Who can see the data? | Only people with login. Evidence has a hash, so any change can be caught. The city decides how long data is kept. |
+| What if it sends police by mistake? | The system only **suggests**. A human operator checks and confirms. AI helps, humans decide. |
 
-**Business / Impact**
+**Business questions (کاروباری سوالات)**
 
-| Question | Answer |
+| Question | Simple answer |
 |---|---|
-| Who's the customer? | City governments / Safe City projects, police control rooms, malls, universities, hospitals, industrial sites. |
-| Cost? | Software on existing cameras; cost is edge GPU boxes + licence/support. Much cheaper than hiring operators for 24/7 multi-screen monitoring. |
-| What's unique vs. existing products? | Multi-threat in one pipeline, built for local context (Karachi, local helplines), two-stage verification, tamper-proof evidence, operator voice control, runs on modest hardware. |
-| Next 6 months? | Pilot with a real camera network, collect local data, formal accuracy report, dispatch integration. |
+| Who will buy it? | Safe City projects, police control rooms, malls, universities, hospitals, factories. |
+| What is the cost? | It uses the cameras that already exist. Cost is only small GPU computers and support. Cheaper than many people watching screens 24 hours. |
+| What is different from others? | Many dangers in one system, two checks, safe evidence, voice control, made for local needs (15, 16, 1122), works on a small computer. |
+| Next 6 months? | Test with real city cameras, collect local data, finish the accuracy report, connect to helplines. |
 
-### 3.3 Hard-Situation Handling
+### 3.3 Difficult moments (مشکل حالات)
 
 | Situation | What to do / say |
 |---|---|
-| **You don't know the answer** | "That's a great question — I don't want to guess. Here's what I do know: … and I'll follow up with exact details." Never invent numbers. |
-| **Judge says "that's not novel"** | Agree partially, then differentiate: "Object detection itself isn't new — our contribution is combining multiple threats, verification, evidence and dispatch into one real-time system tuned for our cities." |
-| **Judge challenges a number** | "Fair point — those are from our test hardware and demo videos. Real-world accuracy needs a field pilot, which is our next step." Honesty > defending a weak number. |
-| **Question is hostile / aggressive** | Stay calm, slow down, thank them, answer the *core* concern, don't argue. |
-| **Two questions at once** | "Let me take them one by one — first…" |
-| **Question outside your project** | Briefly relate it back, or say "outside our scope for now, but here's how it could fit." |
-| **You freeze / lose your place** | Look at the skeleton: Problem → Solution → Demo → How → Impact. Say "Let me show you the most important part" and go to the demo. |
-| **Time running out** | Skip to Close immediately. Never rush through slides. |
+| **You do not know the answer** | "Good question. I don't want to guess. What I know is… I will send you the exact details later." Never make up numbers. |
+| **Judge says "this is not new"** | "Yes, finding objects is not new. Our new part is putting many dangers, two checks, evidence and alerts together in one fast system for our cities." |
+| **Judge doubts (شک) a number** | "Fair point. These numbers are from our test computer and demo videos. A real city test is our next step." Being honest is better than fighting. |
+| **Judge is angry or rude** | Stay calm. Speak slowly. Say thank you. Answer the main point. Do not argue (بحث نہ کریں). |
+| **Two questions together** | "Let me answer one by one. First…" |
+| **Question not about our project** | Connect it to the project in one line, or say "This is not in our project now, but it can be added like this…" |
+| **You forget what to say** | Remember the order: Problem → Solution → Demo → How → Benefit. Say "Let me show you the main part" and start the demo. |
+| **Time is almost over** | Go to the End (Step 7) now. Do not rush. |
 
 ---
 
-## 4. Demo Failure Recovery (Plan A → B → C)
+## 4. If the Demo Breaks (Plan A → B → C)
 
-| Failure | Fix (≤ 20 s) | If fix fails |
+| Problem | Quick fix (20 seconds) | If it still fails |
 |---|---|---|
-| Backend down | `python prototype/run_web.py` | Plan B |
-| Frontend down | `cd frontend && npm run dev -- --host` | Use Desktop Studio (`python prototype/visionguard_app.py`) |
-| Video lags | Switch to 1×1 layout, close other apps | Use OpenCV player: `python prototype/run.py --source video --file prototype/Videos/fire.mp4` |
-| Mic blocked | Type the command in the Voice HUD | Skip voice — it's optional |
-| Laptop crash / no GPU | — | **Plan C: play the backup screen recording** and narrate it |
-| Projector problem | Present from laptop screen, turn it to judges | Talk through architecture on paper/whiteboard |
+| Backend stopped | `python prototype/run_web.py` | Plan B |
+| Website stopped | `cd frontend && npm run dev -- --host` | Use desktop app: `python prototype/visionguard_app.py` |
+| Video is slow | Use 1×1 layout, close other apps | Use simple player: `python prototype/run.py --source video --file prototype/Videos/fire.mp4` |
+| Mic not working | Type the command in the voice box | Skip voice. It is optional (اختیاری). |
+| Laptop crash / no GPU | — | **Plan C: play the backup video** and explain it |
+| Projector problem | Turn your laptop to the judges | Draw the system on paper or board |
 
-Line to use when switching: *"Let me show you the recorded run so we don't lose your time — this is the exact same system."*
+Say this when you switch: *"Let me show you the recorded run, so we don't waste your time. This is the same system."*
 
 ---
 
-## 5. Numbers to Memorize (and say carefully)
+## 5. Numbers to Remember (say them carefully)
 
-- **12** event detectors (fire, fight, weapon threat, robbery, kidnapping, crowd, car accident, bike accident, loitering, abandoned object, vehicle obstruction, audio emergency).
-- **3** custom-trained specialist models: violence classifier, fire/smoke, weapon detection (+ base YOLOv8s detection & pose).
-- **24–30 FPS** display, **~28–42 ms** AI per frame, **< 300 ms** alert — on Quadro T1000 4 GB.
-- **17** pose keypoints per person.
-- **SHA-256** evidence hashing.
+- **12** event checks: fire, fight, gun, robbery, kidnapping, crowd, car accident, bike accident, loitering (بلا وجہ گھومنا), left bag, blocked road, sound emergency.
+- **3** models we trained: fight, fire/smoke, gun (+ YOLOv8 base models for objects and body points).
+- **24–30 FPS** (frames per second), **28–42 ms** AI per frame, alert in **less than 300 ms** — on Quadro T1000 4 GB.
+- **17** body points for each person.
+- **SHA-256** fingerprint for evidence.
 - Helplines: Police **15**, Fire **16**, Rescue **1122**, Traffic **1915**.
 
-> ⚠️ Only quote accuracy / false-alarm % that you can show from an actual report. Unverified numbers are the fastest way to lose a judge's trust.
+> ⚠️ Only say accuracy numbers that are in a real report. A wrong number makes judges stop trusting (اعتماد) you.
 
 ---
 
-## 6. Body Language & Delivery
+## 6. Body Language (جسمانی انداز) and Speaking
 
-- Stand beside the screen, not in front of it. Open posture, hands visible.
-- Speak 10% slower than feels natural. Pause after key lines.
-- Look at the judges, not the screen — glance at the screen only to point.
-- Use the judge's name if you know it.
-- Smile at the start and at the close.
-- One idea per sentence. Avoid jargon unless asked; then go deep.
+- Stand next to the screen, not in front of it. Keep your hands visible.
+- Speak a little slower than normal. Stop for a moment after important lines.
+- Look at the judges, not the screen. Look at the screen only to point.
+- Smile at the start and at the end.
+- Use short sentences. One idea in one sentence.
+- If your English stops, it is okay. Take a breath and say it in simple words. Judges care about the idea, not perfect English.
 
 ---
 
-## 7. One-Page Cue Card (print this)
+## 7. Small Card (print this)
 
 ```
-HOOK    20M people, cameras record, nobody watches.
-PROBLEM Passive CCTV, fatigue, late response, many threat types.
-SOLUTION AI City Brain: Detect → Decide → Dispatch.
-DEMO    Dashboard → fire.mp4 → gun/fight → risk score → Incidents (SHA-256) → voice
-HOW     YOLOv8 → ByteTrack → Pose → Specialists → Event Engine → Risk → Dispatch
-        async pipeline · two-stage verification · temporal persistence · edge GPU
-IMPACT  Reuse cameras, faster response, multi-sector roadmap.
-CLOSE   "Cameras exist. We give them a brain." → stop, invite questions.
-FAIL    run_web.py · npm run dev · Studio app · backup video
+HOOK     20 million people. Cameras record. Nobody watches.
+PROBLEM  Cameras only record, people get tired, help comes late, many dangers.
+SOLUTION Smart cameras: Find → Decide → Send help.
+DEMO     Dashboard → fire.mp4 → gun/fight → risk score → Incidents (SHA-256) → voice
+HOW      YOLOv8 → ByteTrack → Pose → Special models → Event Engine → Risk → Alert
+         separate parts · two checks · time check · small computer
+BENEFIT  Use old cameras, faster help, more areas in future.
+END      "Cameras are there. We give them a brain." → stop, ask for questions.
+BROKEN   run_web.py · npm run dev · desktop app · backup video
 ```
