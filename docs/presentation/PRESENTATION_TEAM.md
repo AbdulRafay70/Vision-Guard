@@ -5,6 +5,41 @@ Team: **Abdul Rafay** (Lead Architect & AI Engineer) · **Moiz** (ML Engineer) �
 
 ---
 
+## Introduction
+
+### What this document is
+This is the playbook for presenting **VisionGuard ULTRA as a team of four**. It says who speaks when, the exact hand-over lines, who answers which question, and what to do if a demo fails or a member is missing. **Every member should read the whole document**, not only their own part.
+
+### The project in 30 seconds
+**VisionGuard ULTRA** is a real-time AI system that turns ordinary CCTV cameras into an active **AI City Brain**. It detects emergencies — fire, fights, weapons, crowd surges, road accidents and abandoned objects — scores the risk from 0 to 100, saves tamper-proof (SHA-256) evidence, and routes the alert to the right helpline (Police 15, Fire 16, Rescue 1122). Built for the Alibaba AI Hackathon 2026.
+
+### How the team introduces itself
+**Opening (Abdul Rafay):**
+> "Assalam-o-Alaikum / Good morning. We are team **VisionGuard**, and we turn passive CCTV cameras into an AI system that **detects, decides and dispatches** emergencies in real time. Let us introduce ourselves."
+
+**Each member, one line, in order (≤ 5 seconds each, step forward slightly while speaking):**
+| Member | Line |
+|---|---|
+| Abdul Rafay | "I'm Abdul Rafay, lead architect — I built the real-time AI pipeline and event engine." |
+| Moiz | "I'm Moiz, ML engineer — I trained our fire, weapon and violence models." |
+| Areeba | "I'm Areeba, data scientist — I prepared the data and evaluate how accurate and fair the models are." |
+| Aqib | "I'm Aqib, frontend and UX — I built the command center you're about to see." |
+
+**Back to Abdul Rafay:** > "Let's start with the problem." → hook.
+
+*Short slots (1–3 min):* Rafay introduces everyone in one sentence instead: "I'm Abdul Rafay, with Moiz on models, Areeba on data, and Aqib on the dashboard."
+
+### How to use this playbook
+| Section | Who must master it |
+|---|---|
+| 1–3 (roles, run of show, scripts) | Everyone — your own script word-for-word, others' scripts roughly |
+| 4 (Q&A system) | Everyone, especially Rafay (moderator) |
+| 5 (time slots) | Rafay + Areeba (timekeeper) |
+| 6 (demo failures) | Aqib + Rafay |
+| 7–8 (rehearsal, cue card) | Everyone |
+
+---
+
 ## 0. Team Prep Checklist (Day before + 30 min before)
 
 | ✅ | Item | Owner |
@@ -53,7 +88,8 @@ Team: **Abdul Rafay** (Lead Architect & AI Engineer) · **Moiz** (ML Engineer) �
 ### 🎤 Abdul Rafay — Opening (0:00–1:30)
 
 **Hook + intro**
-> "Good morning. Karachi has more than 20 million people and thousands of CCTV cameras. But those cameras only **record** — nobody is truly **watching**. We are team VisionGuard: I'm Abdul Rafay, lead architect; Moiz, our ML engineer; Areeba, our data scientist; and Aqib, who built the command center you'll see."
+*(Team introduction first — see Introduction above.)*
+> "Karachi has more than 20 million people and thousands of CCTV cameras. But those cameras only **record** — nobody is truly **watching**."
 
 **Problem**
 - Passive CCTV only gives evidence *after* the crime.

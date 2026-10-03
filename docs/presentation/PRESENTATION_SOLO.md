@@ -5,6 +5,28 @@
 
 ---
 
+## Introduction
+
+### What this document is
+This is the complete playbook for **one presenter** to pitch, demo and defend **VisionGuard ULTRA** alone — at a judge's booth, on stage, in a viva or on an online call. Read it top to bottom once, rehearse with sections 2 and 4, and carry the cue card (section 7).
+
+### The project in 30 seconds
+**VisionGuard ULTRA** is a real-time AI system that turns ordinary CCTV cameras into an active **AI City Brain**. It detects emergencies — fire, fights, weapons, crowd surges, road accidents and abandoned objects — scores the risk from 0 to 100, saves tamper-proof (SHA-256) evidence, and routes the alert to the right helpline (Police 15, Fire 16, Rescue 1122). It was built by Abdul Rafay, Moiz, Areeba and Aqib for the Alibaba AI Hackathon 2026.
+
+### How to introduce yourself (say this first)
+> "Assalam-o-Alaikum / Good morning. My name is **[Your Name]**, and I'm the **[your role]** of team **VisionGuard**. Our team is Abdul Rafay, Moiz, Areeba and Aqib. In the next few minutes I'll show you how we turn passive CCTV cameras into a system that **detects, decides and dispatches** emergencies in real time."
+
+Tips: smile, say your name slowly, keep the intro under 15 seconds, then go straight to the hook.
+
+### How to use this playbook
+| If you have… | Read |
+|---|---|
+| 5 minutes | Section 7 (cue card) + Section 4 (demo failures) |
+| 30 minutes | Sections 1, 2, 5 and 7 |
+| A full day | Everything, and rehearse Q&A (section 3) aloud with a friend |
+
+---
+
 ## 0. Before You Walk In (Checklist — 30 min before)
 
 | ✅ | Item |
