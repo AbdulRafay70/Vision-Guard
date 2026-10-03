@@ -130,6 +130,7 @@ export default function Registry({ user, cameras, registry, pinned, togglePin, f
                     <td>
                       <strong>{c.name}</strong>
                       <div className="mono small muted ellipsis" title={c.source}>{c.id} · {c.source || '—'}</div>
+                      {c.device && <div className="small muted">{c.device.device_name}{c.device.device_kind === 'dvr' ? ` · channel ${c.device.channel}` : ''}{c.link?.transport ? ` · ${c.link.transport.toUpperCase()}` : ''}</div>}
                     </td>
                     <td className="upper small">{c.type}</td>
                     <td>

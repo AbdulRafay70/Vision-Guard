@@ -25,6 +25,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import secrets
 import shutil
 import hashlib
+import re
 
 import config
 from camera.webcam import WebcamSource
@@ -707,7 +708,10 @@ def start_camera(cam_id: str) -> bool:
         _set_cam_status(cam_id, "connecting", "Opening stream…")
         try:
             source = _build_source(cfg["type"], cfg["source"], cfg.get("name", cam_id))
-            if not source.start():
+            first_ok = source.start()
+            # Network cameras heal themselves (reconnect loop inside the source), so keep
+            # them attached even if the first attempt failed; status comes from get_health().
+            if not first_ok and not hasattr(source, "get_health"):
                 _set_cam_status(cam_id, "error", f"Could not open source ({cfg['type']})")
                 return False
         except Exception as e:
@@ -729,9 +733,12 @@ def start_camera(cam_id: str) -> bool:
         stream_pipeline.start(asyncio_loop=state.loop)
         state.camera_sources[cam_id] = source
         state.pipelines[cam_id] = stream_pipeline
-        _set_cam_status(cam_id, "online", "Streaming")
-        logger.info("[CAMERA] '%s' online (%s)", cam_id, cfg["type"])
-        return True
+        if first_ok:
+            _set_cam_status(cam_id, "online", "Streaming")
+            logger.info("[CAMERA] '%s' online (%s)", cam_id, cfg["type"])
+            return True
+        _set_cam_status(cam_id, "error", getattr(source, "last_error", "") or "Not connected yet — retrying")
+        return False
 
 
 def start_camera_async(cam_id: str):
@@ -769,15 +776,27 @@ def _camera_json(cam_id: str, full_source: bool = False) -> dict:
         "camera_fps": 0.0, "display_fps": 0.0, "unique_fps": 0.0, "duplicate_frames": 0,
         "avg_frame_age_ms": 0.0, "p95_frame_age_ms": 0.0, "dropped_stale": 0, "buffer_capacity": 1,
     }
+    src = state.camera_sources.get(cam_id)
+    link = {}
+    if pipeline and src is not None and hasattr(src, "get_health"):
+        h = src.get_health()
+        link = {"transport": h.get("transport"), "resolution": h.get("resolution"), "failures": h.get("failures")}
+        mapped = {"online": "online", "connecting": "connecting", "reconnecting": "connecting", "error": "error"}.get(h.get("state"), "connecting")
+        res = h.get("resolution") or [0, 0]
+        msg = h.get("last_error") or (f"Streaming via {str(h.get('transport') or '').upper()} {res[0]}×{res[1]}" if mapped == "online" else "Connecting…")
+        st = {**st, "state": mapped, "message": msg}
+    device = console_db.camera_devices().get(cam_id)
     source = str(cfg.get("source", ""))
     return {
+        "device": device,
+        "link": link,
         "id": cam_id,
         "name": cfg.get("name", cam_id),
         "type": cfg.get("type", "unknown"),
         "source": source if full_source else _mask_source(source),
         "sector": cfg.get("sector", ""),
         "enabled": bool(cfg.get("enabled")),
-        "active": pipeline is not None,
+        "active": pipeline is not None and st.get("state") == "online",
         "status": st.get("state"),
         "status_message": st.get("message", ""),
         "status_since": st.get("since"),
@@ -940,6 +959,7 @@ async def delete_camera(camera_id: str, request: Request):
     state.camera_status.pop(camera_id, None)
     state.incident_db.delete_system_camera(camera_id)
     console_db.unplace_camera(camera_id)
+    console_db.unlink_camera(camera_id)
     console_db.audit(user["username"], "camera_deleted", target=camera_id, ip=client_ip(request))
     return JSONResponse({"status": "deleted", "id": camera_id})
 
@@ -1211,6 +1231,159 @@ async def clear_demo_videos(request: Request):
         console_db.unplace_camera(cid)
     console_db.audit(user["username"], "demo_videos_cleared", detail=f"{len(removed)} removed", ip=client_ip(request))
     return JSONResponse({"removed": removed})
+
+
+# ── Recorders & network cameras: discover, auto-detect, add in one step ─────
+
+@app.get("/api/devices/brands")
+async def device_brands(request: Request):
+    current_user(request)
+    from camera.discovery import BRANDS
+    return JSONResponse([{"id": k, "label": v["label"]} for k, v in BRANDS.items()])
+
+
+@app.get("/api/devices")
+async def list_devices(request: Request):
+    current_user(request)
+    return JSONResponse(console_db.devices())
+
+
+@app.post("/api/devices/discover")
+async def discover_devices(request: Request):
+    """Scan the local network for cameras / DVRs (ONVIF WS-Discovery + camera-port sweep)."""
+    require_role(request, CAMERA_ADMIN_ROLES)
+    data = await _json_body(request) if (await request.body()) else {}
+    from camera.discovery import discover
+    subnet = str(data.get("subnet") or "").strip() or None
+    if subnet:
+        import ipaddress as _ip
+        try:
+            net = _ip.ip_network(subnet, strict=False)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Subnet must look like 192.168.1.0/24")
+        if net.num_addresses > 1024:
+            raise HTTPException(status_code=400, detail="Scan at most a /22 at a time")
+    found = await asyncio.to_thread(discover, subnet)
+    known = {d["ip"] for d in console_db.devices()}
+    for f in found:
+        f["added"] = f["ip"] in known
+    return JSONResponse({"devices": found})
+
+
+def _probe_payload(data: dict) -> dict:
+    ip = str(data.get("ip") or "").strip()
+    import ipaddress as _ip
+    try:
+        _ip.ip_address(ip)
+    except ValueError:
+        if not re.fullmatch(r"[A-Za-z0-9.-]{1,253}", ip or ""):
+            raise HTTPException(status_code=400, detail="Enter the device IP address (e.g. 192.168.1.64) or hostname")
+    kind = "dvr" if data.get("kind") == "dvr" else "camera"
+    def _int(k, lo, hi, default):
+        try:
+            v = int(data.get(k) or default)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"{k} must be a number")
+        return max(lo, min(hi, v))
+    return {
+        "ip": ip, "kind": kind,
+        "user": str(data.get("username") or "").strip(), "pw": str(data.get("password") or ""),
+        "brand": str(data.get("brand") or "auto"),
+        "rtsp_port": _int("rtsp_port", 0, 65535, 0), "http_port": _int("http_port", 0, 65535, 0),
+        "max_channels": _int("max_channels", 1, 64, 16 if kind == "dvr" else 1),
+        "sub_stream": bool(data.get("sub_stream")),
+    }
+
+
+@app.post("/api/devices/probe")
+async def probe_device_endpoint(request: Request):
+    """
+    One-shot detection: ONVIF → brand templates → HTTP MJPEG, then a live frame
+    from every stream found. DVR/NVR: enumerates all channels.
+    """
+    require_role(request, CAMERA_ADMIN_ROLES)
+    args = _probe_payload(await _json_body(request))
+    from camera.discovery import probe_device
+    try:
+        res = await asyncio.wait_for(asyncio.to_thread(probe_device, **args), timeout=180)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Detection took too long. Try fewer channels or check the network.")
+    from dataclasses import asdict
+    return JSONResponse(asdict(res))
+
+
+@app.post("/api/devices/add")
+async def add_device(request: Request):
+    """
+    Register a camera or every selected DVR/NVR channel in one step. Body:
+      {"device": {"name","kind","brand","model","ip","username"},
+       "streams": [{"channel": 1, "url": "rtsp://…", "name": "Gate"}],
+       "location": {"cityId","areaId","streetId"?}}
+    Each stream becomes a camera: saved, placed, linked to the device and started.
+    """
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    data = await _json_body(request)
+    dev = data.get("device") or {}
+    streams = [s for s in (data.get("streams") or []) if str(s.get("url") or "").strip()]
+    if not streams:
+        raise HTTPException(status_code=400, detail="Select at least one stream to add")
+    if len(streams) > 64:
+        raise HTTPException(status_code=400, detail="At most 64 channels per device")
+    ip = str(dev.get("ip") or "").strip()
+    kind = "dvr" if dev.get("kind") == "dvr" else "camera"
+    loc = data.get("location") or {}
+    if not loc.get("areaId"):
+        raise HTTPException(status_code=400, detail="Choose the area where this device is installed")
+
+    device = console_db.save_device(
+        name=str(dev.get("name") or (f"DVR {ip}" if kind == "dvr" else f"Camera {ip}")).strip()[:120],
+        kind=kind, brand=str(dev.get("brand") or ""), model=str(dev.get("model") or ""), ip=ip,
+        username=str(dev.get("username") or ""), channels=len(streams),
+    )
+    sector = console_db.area_name(loc["areaId"]) or ""
+    base = re.sub(r"[^a-z0-9]+", "_", ip.lower()).strip("_")
+    created = []
+    for st_ in streams:
+        ch = int(st_.get("channel") or 1)
+        url = str(st_["url"]).strip()
+        if not url.startswith(("rtsp://", "rtsps://", "http://", "https://")):
+            raise HTTPException(status_code=400, detail=f"Channel {ch}: invalid stream URL")
+        # Re-adding the same device/channel updates the existing camera instead of duplicating it
+        existing = next((cid for cid, link in console_db.camera_devices().items()
+                         if link["device_id"] == device["id"] and link["channel"] == ch), None)
+        cam_id = existing or (f"{'dvr' if kind == 'dvr' else 'ipc'}_{base}_ch{ch}" if kind == "dvr" else f"ipc_{base}")
+        name = str(st_.get("name") or (f"{device['name']} · CH{ch:02d}" if kind == "dvr" else device["name"])).strip()[:120]
+        config.CAMERAS[cam_id] = {"id": cam_id, "name": name, "type": "rtsp", "source": url, "sector": sector, "enabled": True}
+        _persist_camera(cam_id)
+        try:
+            console_db.place_camera(cam_id, loc.get("cityId"), loc["areaId"], loc.get("streetId") or None)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        console_db.link_camera(cam_id, device["id"], ch)
+        created.append(cam_id)
+
+    # Start all channels in parallel (each source connects and self-heals in its own thread)
+    await asyncio.gather(*[asyncio.to_thread(start_camera, cid) for cid in created])
+    cams = [_camera_json(cid) for cid in created]
+    online = sum(1 for c in cams if c["status"] == "online")
+    console_db.audit(user["username"], "device_added", target=device["id"],
+                     detail=f"{kind} {ip}: {online}/{len(cams)} channels online", ip=client_ip(request))
+    return JSONResponse({"device": device, "cameras": cams, "online": online}, status_code=201)
+
+
+@app.delete("/api/devices/{device_id}")
+async def delete_device(device_id: str, request: Request):
+    """Remove a recorder / camera device and all of its channel cameras."""
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    cams = console_db.delete_device(device_id)
+    for cid in cams:
+        stop_camera(cid)
+        config.CAMERAS.pop(cid, None)
+        state.camera_status.pop(cid, None)
+        state.incident_db.delete_system_camera(cid)
+        console_db.unplace_camera(cid)
+    console_db.audit(user["username"], "device_deleted", target=device_id, detail=f"{len(cams)} cameras removed", ip=client_ip(request))
+    return JSONResponse({"status": "deleted", "cameras": cams})
 
 
 # ── Innovation 4: VisionGuard Prediction Engine ───────────────────────────

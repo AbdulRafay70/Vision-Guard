@@ -8,9 +8,9 @@ const TYPES = [
   { id: 'video', label: 'Recorded video', hint: 'Server path to a video file, or upload a clip' },
 ];
 
-const NEW = '__new__';
+export const NEW = '__new__';
 
-export default function ConnectCamera({ registry, onConnected, notify }) {
+export function ManualConnect({ registry, onConnected, notify }) {
   const [cityId, setCityId] = useState(registry.cities[0]?.id || '');
   const [areaId, setAreaId] = useState('');
   const [streetId, setStreetId] = useState('');
@@ -99,14 +99,7 @@ export default function ConnectCamera({ registry, onConnected, notify }) {
   const typeInfo = TYPES.find((t) => t.id === type);
 
   return (
-    <div className="page page-narrow">
-      <div className="page-head">
-        <div>
-          <h1>Connect camera</h1>
-          <p className="muted">Register a new feed. It starts streaming through the AI pipeline as soon as it connects; other feeds are not interrupted.</p>
-        </div>
-      </div>
-
+    <>
       <form className="form-sections" onSubmit={submit}>
         <fieldset className="panel form-section">
           <legend><span className="step">1</span>Installation site</legend>
@@ -162,11 +155,11 @@ export default function ConnectCamera({ registry, onConnected, notify }) {
           {msg && <div className={`notice ${msg.ok ? 'notice-ok' : 'notice-error'}`}>{msg.ok ? <Check size={16} /> : <CircleAlert size={16} />}{msg.text}</div>}
         </fieldset>
       </form>
-    </div>
+    </>
   );
 }
 
-function LevelSelect({ label, value, onChange, items, newLabel, newValue, onNewValue, disabled, optional }) {
+export function LevelSelect({ label, value, onChange, items, newLabel, newValue, onNewValue, disabled, optional }) {
   return (
     <label className="field">
       <span>{label} {optional && <em>optional</em>}</span>

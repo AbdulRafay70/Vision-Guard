@@ -55,6 +55,31 @@ are retried automatically (15 s backoff, up to 5 min).
 Roles: **Super Admin** (everything), **Supervisor** (cameras, locations, audit), **Tactical Operator**
 (start/stop cameras, incidents), **Security Analyst** (incidents), **Viewer** (read-only).
 
+## Connecting DVRs, NVRs and WiFi cameras
+
+**Connect camera → Camera or DVR / NVR (auto-detect)**: choose *Standalone IP / WiFi camera* or
+*DVR / NVR recorder*, enter the IP address, username and password (or press **Scan** to find devices on
+the LAN), then **Detect**. In one pass the server:
+
+1. checks which camera ports are open;
+2. asks the device over **ONVIF** for its exact stream URLs (every recorder channel is listed);
+3. otherwise tries the stream paths of known brands — Hikvision / HiLook / Ezviz, Dahua / CP Plus / Imou,
+   Uniview, XMeye, TVT, Reolink, Tapo, V380, Yoosee, CamHi, Axis, Hanwha and generic — using a fast RTSP
+   handshake that also tells a wrong password apart from a wrong path;
+4. falls back to HTTP MJPEG for simple WiFi cameras;
+5. grabs a live frame from every stream it found.
+
+Tick the channels to keep, choose the city / area / street, and **Add** — all channels are saved, linked
+to the recorder, started in parallel and pinned to the wall.
+
+Streams use RTSP over TCP (falling back to UDP), with open/read timeouts, a stall watchdog and
+automatic reconnects (2 s → 30 s backoff, forever). A camera that drops shows *Connecting* or *Fault*
+with the reason (wrong password, path not found, unreachable) and comes back on its own.
+
+Requirements: the server must be on the same network / VLAN as the devices (or have the RTSP port
+forwarded), and RTSP or ONVIF must be enabled on the device (on many Hikvision / Dahua units ONVIF is off
+by default and needs its own user).
+
 ## Voice control
 
 Press **V** (or the mic button) and speak, or type into the command bar (`/` to focus). Turn on

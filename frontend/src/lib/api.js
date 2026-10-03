@@ -59,6 +59,14 @@ export const api = {
     return request('/api/cameras/upload-test-video', { method: 'POST', body: fd });
   },
 
+  // recorders & network cameras
+  deviceBrands: () => request('/api/devices/brands'),
+  devices: () => request('/api/devices'),
+  discoverDevices: (subnet) => send('POST', '/api/devices/discover', subnet ? { subnet } : {}),
+  probeDevice: (payload) => send('POST', '/api/devices/probe', payload),
+  addDevice: (payload) => send('POST', '/api/devices/add', payload),
+  deleteDevice: (id) => send('DELETE', `/api/devices/${enc(id)}`),
+
   // sample footage
   demoVideos: () => request('/api/demo-videos'),
   deployDemo: (videos) => send('POST', '/api/demo-videos/deploy', videos ? { videos } : {}),

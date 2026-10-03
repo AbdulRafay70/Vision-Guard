@@ -182,6 +182,22 @@ class ConsoleDatabase:
                     ip TEXT,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS devices (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    brand TEXT,
+                    model TEXT,
+                    ip TEXT NOT NULL,
+                    username TEXT,
+                    channels INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS device_cameras (
+                    camera_id TEXT PRIMARY KEY,
+                    device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+                    channel INTEGER NOT NULL DEFAULT 1
+                );
                 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
                 CREATE INDEX IF NOT EXISTS idx_voice_created ON voice_log(created_at);
             """)
@@ -439,6 +455,44 @@ class ConsoleDatabase:
     def area_name(self, area_id: str) -> Optional[str]:
         row = self._one("SELECT name FROM areas WHERE id = ?", (area_id,))
         return row["name"] if row else None
+
+    # ── recorders & devices ────────────────────────────────────────────
+    def save_device(self, name: str, kind: str, brand: str, model: str, ip: str, username: str, channels: int) -> Dict[str, Any]:
+        existing = self._one("SELECT id FROM devices WHERE ip = ? AND kind = ?", (ip, kind))
+        if existing:
+            self._exec("UPDATE devices SET name = ?, brand = ?, model = ?, username = ?, channels = ? WHERE id = ?",
+                       (name, brand, model, username, channels, existing["id"]))
+            dev_id = existing["id"]
+        else:
+            dev_id = self._new_id("devices", f"{kind}-{ip.replace('.', '-')}")
+            self._exec("INSERT INTO devices (id, name, kind, brand, model, ip, username, channels, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                       (dev_id, name, kind, brand, model, ip, username, channels, _now()))
+        return self._one("SELECT * FROM devices WHERE id = ?", (dev_id,))
+
+    def link_camera(self, camera_id: str, device_id: str, channel: int):
+        self._exec("""INSERT INTO device_cameras (camera_id, device_id, channel) VALUES (?, ?, ?)
+                      ON CONFLICT(camera_id) DO UPDATE SET device_id = excluded.device_id, channel = excluded.channel""",
+                   (camera_id, device_id, channel))
+
+    def unlink_camera(self, camera_id: str):
+        self._exec("DELETE FROM device_cameras WHERE camera_id = ?", (camera_id,))
+
+    def devices(self) -> List[Dict[str, Any]]:
+        devs = self._all("SELECT * FROM devices ORDER BY created_at")
+        links = self._all("SELECT * FROM device_cameras ORDER BY channel")
+        for d in devs:
+            d["cameras"] = [{"camera_id": l["camera_id"], "channel": l["channel"]} for l in links if l["device_id"] == d["id"]]
+        return devs
+
+    def camera_devices(self) -> Dict[str, Dict[str, Any]]:
+        rows = self._all("""SELECT dc.camera_id, dc.channel, d.id, d.name, d.kind FROM device_cameras dc
+                             JOIN devices d ON d.id = dc.device_id""")
+        return {r["camera_id"]: {"device_id": r["id"], "device_name": r["name"], "device_kind": r["kind"], "channel": r["channel"]} for r in rows}
+
+    def delete_device(self, device_id: str) -> List[str]:
+        cams = [r["camera_id"] for r in self._all("SELECT camera_id FROM device_cameras WHERE device_id = ?", (device_id,))]
+        self._exec("DELETE FROM devices WHERE id = ?", (device_id,))
+        return cams
 
     # ── preferences ────────────────────────────────────────────────────
     def get_preferences(self, username: str) -> Dict[str, Any]:

@@ -8,7 +8,7 @@ import Shell from './components/Shell';
 import Dashboard from './pages/Dashboard';
 import LiveView from './pages/LiveView';
 import Registry from './pages/Registry';
-import ConnectCamera from './pages/ConnectCamera';
+import ConnectCamera from './pages/AddDevice';
 import Incidents from './pages/Incidents';
 import Analytics from './pages/Analytics';
 import SystemHealth from './pages/SystemHealth';
