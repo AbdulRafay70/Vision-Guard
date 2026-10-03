@@ -167,13 +167,15 @@ class FightDetector(BaseEventDetector):
                 continue  # Only people in the close pair matter
             aggressive_poses += st["raised"]
             max_wrist_speed = max(max_wrist_speed, st["speed"])
-            hit = self._wrist_contact(pose, tracks_by_id)
+            # Contact only counts while the hand is moving (a landing punch), not
+            # a resting hand on a shoulder or two people standing side by side.
+            hit = self._wrist_contact(pose, tracks_by_id) if st["speed"] > 0.5 else 0
             contacts += hit
             # A punch is a fast wrist movement that travels *toward* the other
             # person (or lands on them). Speed alone also fires on equipment
             # handling, hose jitter, gesturing, etc. Pose is sampled only a few
             # times per second, so thresholds are modest.
-            is_strike = (st["speed"] > 1.0 and st["approach"] > 0.6) or hit
+            is_strike = (st["speed"] > 1.0 and st["approach"] > 0.3) or hit
             if is_strike:
                 strikers += 1
                 if st["fresh"]:
@@ -230,7 +232,10 @@ class FightDetector(BaseEventDetector):
 
         # Recurrence gate: one raised arm or one hug is not a fight.
         repeated_striking = striking_frames >= 4 and strike_frames >= 2
-        classifier_backed = violent_frames >= 2 and striking_frames >= 2
+        # The violence classifier alone is not trusted: it was observed scoring
+        # firefighters holding a hose as 100% violent. It must be backed by at
+        # least one real strike seen in the poses.
+        classifier_backed = violent_frames >= 2 and strike_frames >= 1
         if not (repeated_striking or classifier_backed or latest.get("weapon_present")):
             return 0
 
