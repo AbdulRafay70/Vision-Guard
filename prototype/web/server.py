@@ -351,6 +351,12 @@ class CameraStreamPipeline:
         self._running = False
         for t in self._threads:
             t.join(timeout=3.0)
+        # Per-camera pipeline owns its specialist worker thread
+        if self.pipeline is not None and self.pipeline is not state.pipeline:
+            try:
+                self.pipeline.stop()
+            except Exception:
+                pass
         logger.info("[PIPELINE] Stopped pipeline for '%s'", self.camera_name)
 
     def _camera_reader(self):
@@ -733,11 +739,17 @@ def start_camera(cam_id: str) -> bool:
             source.stop()
             _set_cam_status(cam_id, "error", "AI pipeline is not initialised")
             return False
+        # Per-camera AI state (tracker, specialist worker, event windows) so one
+        # camera's objects and alerts never mix with another's. Models are shared.
+        cam_pipeline = AIPipeline.for_camera(state.pipeline)
+        cam_engine = EventEngine(audio_monitor=state.audio_monitor)
         stream_pipeline = CameraStreamPipeline(
             camera_source=source,
-            pipeline=state.pipeline,
-            event_engine=state.event_engine,
-            evidence_generator=state.evidence_generator,
+            pipeline=cam_pipeline,
+            event_engine=cam_engine,
+            # Own evidence recorder per camera: a shared one let several camera
+            # threads write clips at once (FFmpeg segfault) and mixed cameras' frames.
+            evidence_generator=EvidencePackageGenerator(),
             camera_name=cfg.get("name", cam_id),
             camera_id=cam_id,
         )
@@ -2073,7 +2085,21 @@ async def health():
 async def get_status():
     """Get System Status Summary."""
     summary = state.event_engine.get_status_summary() if state.event_engine else {}
-    summary["ai_fps"] = (
+    # Merge alerts from every camera's own event engine
+    fps = []
+    for cam_pipe in list(state.pipelines.values()):
+        eng = cam_pipe.event_engine
+        if eng is not None and eng is not state.event_engine:
+            cam_sum = eng.get_status_summary()
+            summary["active_alerts"] = summary.get("active_alerts", 0) + cam_sum.get("active_alerts", 0)
+            summary["total_alerts_today"] = summary.get("total_alerts_today", 0) + cam_sum.get("total_alerts_today", 0)
+            for a in cam_sum.get("alerts", []):
+                a["camera"] = cam_pipe.camera_name
+            summary.setdefault("alerts", []).extend(cam_sum.get("alerts", []))
+        la = getattr(cam_pipe.pipeline, "_last_analysis", None)
+        if la is not None:
+            fps.append(la.ai_fps)
+    summary["ai_fps"] = round(sum(fps) / len(fps), 1) if fps else (
         state.pipeline._last_analysis.ai_fps
         if (state.pipeline and state.pipeline._last_analysis) else 0.0
     )

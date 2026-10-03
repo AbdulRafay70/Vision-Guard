@@ -176,10 +176,41 @@ class AIPipeline:
         if self.async_mode:
             self.specialist_worker.start()
 
-        self._start_time = time.time()
+        self._start_time = time.monotonic()
         logger.info("=" * 60)
         logger.info("  ALL MODELS LOADED — ASYNC WORKER READY")
         logger.info("=" * 60)
+
+    @classmethod
+    def for_camera(cls, base: "AIPipeline") -> "AIPipeline":
+        """
+        Create an independent pipeline for one camera that reuses the heavy
+        models already loaded in `base`.
+
+        Each camera needs its OWN tracker, specialist worker and frame history:
+        sharing one pipeline across cameras interleaved frames from different
+        videos into a single tracker (IDs and speeds jumbled — parked cars
+        "moving" 300+ px/frame) and leaked one camera's fire/pose results into
+        another camera's analysis.
+        """
+        from ultralytics import YOLO
+        cam = cls.__new__(cls)
+        cam.__dict__.update({k: v for k, v in base.__dict__.items()})
+        cam.detector = base.detector
+        cam.pose_estimator = base.pose_estimator
+        cam.tracker = ObjectTracker()
+        # ByteTrack state lives on the YOLO model object (persist=True), so each
+        # camera needs its own lightweight detection model instance.
+        cam.track_model = YOLO(config.YOLO_MODEL)
+        cam.specialist_worker = SpecialistWorker(base.detector, base.pose_estimator)
+        cam.specialist_worker.action = base.specialist_worker.action  # share loaded clip model
+        cam._frame_count = 0
+        cam._ai_frame_count = 0
+        cam._last_analysis = None
+        cam._start_time = time.monotonic()
+        if cam.async_mode:
+            cam.specialist_worker.start()
+        return cam
 
     def stop(self):
         """Stop background worker threads."""
@@ -206,7 +237,7 @@ class AIPipeline:
         self._ai_frame_count += 1
 
         # Step 1: FAST PRIMARY PATH — Detection + Tracking in ONE model.track() call
-        detections, tracks = self.tracker.update(frame, self.detector.model)
+        detections, tracks = self.tracker.update(frame, getattr(self, 'track_model', None) or self.detector.model)
 
         # Step 2: Push latest frame reference, frame ID, capture time, and tracks to specialist worker
         self.specialist_worker.push_frame(frame, current_fid, c_time, tracks)
@@ -291,7 +322,7 @@ class AIPipeline:
         self._ai_frame_count += 1
         self._pose_frame_counter += 1
 
-        detections, tracks = self.tracker.update(frame, self.detector.model)
+        detections, tracks = self.tracker.update(frame, getattr(self, 'track_model', None) or self.detector.model)
 
         self._fire_frame_counter += 1
         if self._fire_frame_counter % config.FIRE_DETECT_EVERY_N_AI_FRAMES == 0:
@@ -470,7 +501,7 @@ class AIPipeline:
         # Frame / timing counters
         self._frame_count = 0
         self._ai_frame_count = 0
-        self._start_time = time.time()
+        self._start_time = time.monotonic()
 
         # Stagger counters (fire, weapon, pose)
         self._fire_frame_counter = 0

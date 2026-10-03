@@ -4,6 +4,7 @@ Detects persons, vehicles, objects, fire, and smoke using YOLOv8.
 """
 import cv2
 import logging
+import threading
 import numpy as np
 from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass, field
@@ -59,6 +60,9 @@ class ObjectDetector:
     """
 
     def __init__(self):
+        # Serialises specialist-model inference across cameras: Ultralytics models
+        # are not thread-safe, and one GPU runs them one at a time anyway.
+        self.infer_lock = threading.RLock()
         self.model: Optional[YOLO] = None
         self.fire_model: Optional[YOLO] = None
         self.violence_model: Optional[YOLO] = None

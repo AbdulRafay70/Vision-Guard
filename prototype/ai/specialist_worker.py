@@ -286,6 +286,7 @@ class SpecialistWorker:
             # Execute the selected specialist
             t_start = time.monotonic()
             try:
+                self.detector.infer_lock.acquire()
                 if task == "pose":
                     self._run_pose(frame, frame_id, capture_timestamp, tracks)
                 elif task == "fire":
@@ -300,6 +301,8 @@ class SpecialistWorker:
                     self._run_action(frame_id, capture_timestamp, tracks)
             except Exception as e:
                 logger.error("[WORKER] Error in specialist %s: %s", task, e, exc_info=True)
+            finally:
+                self.detector.infer_lock.release()
 
             self._last_run_time[task] = time.monotonic()
             self._run_counts[task] += 1
