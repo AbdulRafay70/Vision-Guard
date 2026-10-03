@@ -76,6 +76,8 @@ export const api = {
   // sample footage
   demoVideos: () => request('/api/demo-videos'),
   deployDemo: (videos) => send('POST', '/api/demo-videos/deploy', videos ? { videos } : {}),
+  deployGrid: (count) => send('POST', '/api/demo-videos/grid', { count }),
+  clearGrid: () => send('POST', '/api/demo-videos/grid/clear'),
   clearDemo: () => send('POST', '/api/demo-videos/clear'),
 
   // locations

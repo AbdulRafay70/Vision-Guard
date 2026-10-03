@@ -6,6 +6,27 @@ import { Play, Trash2, RefreshCw, Upload } from '../components/Icons';
 const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
 
 export default function DemoFootage({ user, registry, onRefresh, onDeployed, notify }) {
+  const [gridCount, setGridCount] = useState(24);
+  const [gridBusy, setGridBusy] = useState('');
+  const admin0 = can.manageCameras(user);
+
+  const deployGrid = async () => {
+    setGridBusy('deploy');
+    try {
+      const res = await api.deployGrid(gridCount);
+      onDeployed(res.deployed.map((d) => d.id));
+      await Promise.all([onRefresh(), registry.reload(), load()]);
+      notify(`${res.online} of ${res.deployed.length} grid cameras live across ${res.areas.length} areas.`, res.online ? 'ok' : 'bad');
+    } catch (e) { notify(e.message, 'bad'); }
+    setGridBusy('');
+  };
+  const clearGrid = async () => {
+    if (!window.confirm('Remove every city-grid camera?')) return;
+    setGridBusy('clear');
+    try { const r = await api.clearGrid(); await Promise.all([onRefresh(), registry.reload(), load()]); notify(`${r.removed.length} grid cameras removed.`); } catch (e) { notify(e.message, 'bad'); }
+    setGridBusy('');
+  };
+
   const [videos, setVideos] = useState([]);
   const [picked, setPicked] = useState({}); // key -> { name, areaId, on }
   const [busy, setBusy] = useState('');
@@ -58,6 +79,24 @@ export default function DemoFootage({ user, registry, onRefresh, onDeployed, not
         {admin && <button className="btn btn-ghost" disabled={!!busy || !selected.length} onClick={() => deploy(selected)}><Play size={15} /> Stream selected ({selected.length})</button>}
         {admin && <button className="btn btn-primary" disabled={!!busy || !videos.length} onClick={() => deploy(videos)}><Play size={15} /> {busy === 'deploy' ? 'Starting…' : 'Stream all'}</button>}
       </div>
+
+      {admin0 && (
+        <section className="panel grid-deploy">
+          <div>
+            <h3>City-wide command grid</h3>
+            <p className="muted small">Deploy many cameras spread across Karachi areas and streets, each streaming a sample clip through the AI pipeline — a full command-center view for demos.</p>
+          </div>
+          <div className="grid-deploy-controls">
+            <label className="field inline"><span>Cameras</span>
+              <select value={gridCount} onChange={(e) => setGridCount(Number(e.target.value))}>
+                {[12, 24, 36, 48, 64, 96, 120].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+            <button className="btn btn-primary" disabled={!!gridBusy} onClick={deployGrid}>{gridBusy === 'deploy' ? 'Deploying…' : `Deploy ${gridCount} cameras`}</button>
+            <button className="btn btn-ghost" disabled={!!gridBusy} onClick={clearGrid}><Trash2 size={14} /> Clear grid</button>
+          </div>
+        </section>
+      )}
 
       {videos.length === 0 && (
         <div className="panel empty-state">

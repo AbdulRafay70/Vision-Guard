@@ -1232,6 +1232,105 @@ async def deploy_demo_videos(request: Request):
     return JSONResponse({"deployed": deployed})
 
 
+# City-grid demo: many cameras spread across Karachi, streaming the sample clips.
+_KARACHI_GRID = {
+    "Saddar": ["Empress Market", "Abdullah Haroon Road", "Zaibunnisa Street", "Preedy Street", "Shahra-e-Liaquat"],
+    "Clifton": ["Sea View", "Boat Basin", "Do Talwar", "Bilawal Chowk", "Schon Circle"],
+    "Lyari": ["Cheel Chowk", "Lea Market", "Shah Beg Lane", "Baghdadi", "Agra Taj"],
+    "Gulshan": ["NIPA Chowrangi", "Disco Morr", "Perfume Chowk", "Civic Centre", "Millennium Mall"],
+    "Nazimabad": ["Golden Town", "Teen Hatti", "Petrol Pump", "Paposh Nagar", "Chowrangi"],
+    "Orangi": ["Banaras Chowk", "Qureshi Para", "Iqbal Market", "Sector 11", "Data Nagar"],
+    "DHA": ["Khayaban-e-Ittehad", "Khayaban-e-Shahbaz", "Phase 5 Gate", "Nishat Commercial", "Beach Avenue"],
+    "Jauhar": ["Munawar Chowrangi", "Kamran Chowrangi", "Johar Mor", "Block 15", "University Road"],
+}
+
+
+@app.post("/api/demo-videos/grid")
+async def deploy_demo_grid(request: Request):
+    """
+    Build a city-wide command-center grid: create N cameras spread across Karachi
+    areas and streets, each streaming one of the sample clips on a loop.
+    Body: {"count": 24}  (default 24, max 120).
+    """
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    data = await _json_body(request) if (await request.body()) else {}
+    try:
+        count = int(data.get("count") or 24)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="count must be a number")
+    count = max(1, min(count, 120))
+
+    clips = [p for p in sorted(DEMO_VIDEOS_DIR.glob("*")) if p.is_file() and p.suffix.lower() in _VIDEO_EXTS]
+    if not clips:
+        raise HTTPException(status_code=404, detail="No sample videos found in prototype/Videos")
+
+    tree = console_db.location_tree()
+    city = next((c for c in tree if c["name"].lower() == "karachi"), None)
+    city_id = city["id"] if city else console_db.add_city("Karachi")["id"]
+
+    # Ensure areas + streets exist, caching their ids
+    area_ids, street_ids = {}, {}
+    existing_areas = {a["name"].lower(): a for a in (city["areas"] if city else [])}
+    for area_name, streets in _KARACHI_GRID.items():
+        a = existing_areas.get(area_name.lower())
+        area_id = a["id"] if a else console_db.add_area(city_id, area_name)["id"]
+        area_ids[area_name] = area_id
+        have = {s["name"].lower(): s["id"] for s in (a["streets"] if a else [])}
+        ids = []
+        for st_name in streets:
+            ids.append(have.get(st_name.lower()) or console_db.add_street(area_id, st_name)["id"])
+        street_ids[area_name] = ids
+
+    # Spread cameras across the city: street-minor, area-major interleave
+    slots = []
+    maxlen = max(len(v) for v in _KARACHI_GRID.values())
+    for i in range(maxlen):
+        for area in _KARACHI_GRID:
+            if i < len(_KARACHI_GRID[area]):
+                slots.append((area, street_ids[area][i], _KARACHI_GRID[area][i]))
+
+    deployed, created_ids = [], []
+    loop = asyncio.get_running_loop()
+    for n in range(count):
+        area, street_id, street_name = slots[n % len(slots)]
+        clip = clips[n % len(clips)]
+        cam_id = f"grid_{n + 1:03d}"
+        name = f"{area} · {street_name}"
+        config.CAMERAS[cam_id] = {
+            "id": cam_id, "name": name, "type": "video", "source": str(clip),
+            "sector": area, "enabled": True,
+        }
+        _persist_camera(cam_id)
+        console_db.place_camera(cam_id, city_id, area_ids[area], street_id)
+        console_db.set_access(cam_id, {"basis": "demo", "note": "City-grid demo footage"}, user["username"])
+        created_ids.append(cam_id)
+
+    # Start all grid cameras in parallel
+    await asyncio.gather(*[asyncio.to_thread(start_camera, cid) for cid in created_ids])
+    for cid in created_ids:
+        deployed.append({**_camera_json(cid), "placement": console_db.placements().get(cid)})
+    online = sum(1 for d in deployed if d["active"])
+    console_db.audit(user["username"], "demo_grid_deployed", target=f"{len(deployed)} cameras",
+                     detail=f"{online}/{len(deployed)} streaming across {len(_KARACHI_GRID)} areas", ip=client_ip(request))
+    return JSONResponse({"deployed": deployed, "online": online, "areas": list(_KARACHI_GRID)})
+
+
+@app.post("/api/demo-videos/grid/clear")
+async def clear_demo_grid(request: Request):
+    """Remove every camera created by the city-grid demo."""
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    removed = [cid for cid in list(config.CAMERAS) if cid.startswith("grid_")]
+    for cid in removed:
+        stop_camera(cid)
+        config.CAMERAS.pop(cid, None)
+        state.camera_status.pop(cid, None)
+        state.incident_db.delete_system_camera(cid)
+        console_db.unplace_camera(cid)
+        console_db.clear_access(cid)
+    console_db.audit(user["username"], "demo_grid_cleared", detail=f"{len(removed)} removed", ip=client_ip(request))
+    return JSONResponse({"removed": removed})
+
+
 @app.post("/api/demo-videos/clear")
 async def clear_demo_videos(request: Request):
     """Stop and remove every camera created from a sample clip."""
