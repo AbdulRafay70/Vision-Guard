@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Check, CircleAlert, Upload, Radio } from '../components/Icons';
 
@@ -10,7 +10,7 @@ const TYPES = [
 
 const NEW = '__new__';
 
-export default function ConnectCamera({ registry, onConnected }) {
+export default function ConnectCamera({ registry, onConnected, notify }) {
   const [cityId, setCityId] = useState(registry.cities[0]?.id || '');
   const [areaId, setAreaId] = useState('');
   const [streetId, setStreetId] = useState('');
@@ -25,21 +25,28 @@ export default function ConnectCamera({ registry, onConnected }) {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState('');
 
+  // Cities load from the server after mount; default to the first one
+  useEffect(() => {
+    if (!cityId && registry.cities[0]) setCityId(registry.cities[0].id);
+  }, [cityId, registry.cities]);
+
   const city = registry.cities.find((c) => c.id === cityId);
   const area = city?.areas.find((a) => a.id === areaId);
 
-  // Resolve "new …" selections into real registry nodes at submit time
-  const resolveLocation = () => {
-    let c = cityId, a = areaId, s = streetId;
-    if (c === NEW) { if (!newName.city.trim()) throw new Error('Enter the new city name.'); c = registry.addCity(newName.city); }
-    if (!c) throw new Error('Select a city.');
-    if (a === NEW) { if (!newName.area.trim()) throw new Error('Enter the new area name.'); a = registry.addArea(c, newName.area); }
-    if (!a) throw new Error('Select an area.');
-    if (s === NEW) { if (!newName.street.trim()) throw new Error('Enter the new street name.'); s = registry.addStreet(c, a, newName.street); }
+  // Validate first, then create any "new …" locations in the database
+  const resolveLocation = async () => {
+    if (!cityId) throw new Error('Select a city.');
+    if (cityId === NEW && !newName.city.trim()) throw new Error('Enter the new city name.');
+    if (!areaId) throw new Error('Select an area.');
+    if (areaId === NEW && !newName.area.trim()) throw new Error('Enter the new area name.');
+    if (streetId === NEW && !newName.street.trim()) throw new Error('Enter the new street name.');
+    const c = cityId === NEW ? await registry.addCity(newName.city) : cityId;
+    const a = areaId === NEW ? await registry.addArea(c, newName.area) : areaId;
+    const s = streetId === NEW ? await registry.addStreet(c, a, newName.street) : streetId;
+    setCityId(c); setAreaId(a); setStreetId(s || '');
+    setNewName({ city: '', area: '', street: '' });
     return { cityId: c, areaId: a, ...(s ? { streetId: s } : {}) };
   };
-
-  const areaName = () => (areaId === NEW ? newName.area : area?.name) || '';
 
   const runTest = async () => {
     setTest(null); setBusy('test');
@@ -64,21 +71,24 @@ export default function ConnectCamera({ registry, onConnected }) {
     setMsg(null);
     if (!name.trim()) { setMsg({ ok: false, text: 'Enter a camera name.' }); return; }
     if (!String(source).trim()) { setMsg({ ok: false, text: 'Enter the camera source.' }); return; }
-    let placement;
-    try { placement = resolveLocation(); } catch (err) { setMsg({ ok: false, text: err.message }); return; }
-
     setBusy('connect');
     try {
+      const location = await resolveLocation();
       const res = await api.connectCamera({
         id: camId.trim() || undefined,
         name: name.trim(),
         type,
         source: type === 'webcam' ? Number(source) : source.trim(),
-        sector: areaName(),
+        location,
       });
-      registry.place(res.id, placement);
+      await registry.reload();
       onConnected(res.id);
-      setMsg({ ok: true, text: `${res.name} is connected and streaming. It has been pinned to the dashboard.` });
+      if (res.status === 'online') {
+        setMsg({ ok: true, text: `${res.name} is connected and streaming. It has been saved and pinned to the dashboard.` });
+        notify(`${res.name} connected.`);
+      } else {
+        setMsg({ ok: false, text: `${res.name} was saved but is not streaming yet: ${res.status_message || res.status}. The server keeps retrying automatically.` });
+      }
       setName(''); setCamId(''); setSource(''); setTest(null);
     } catch (err) {
       setMsg({ ok: false, text: err.message });

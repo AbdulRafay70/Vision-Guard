@@ -103,7 +103,9 @@ export default function Dashboard({ cameras, registry, pinned, togglePin, focusC
                   <li>“Show Clifton cameras”</li>
                   <li>“Grid three by three”</li>
                   <li>“Add camera 1 to dashboard”</li>
-                  <li>“Zoom in” · “Full screen”</li>
+                  <li>“Zoom in” · “Full screen” · “Next page”</li>
+                  <li>“Stop camera 3” · “Start Boat Basin”</li>
+                  <li>“Open analytics” · “Confirm alert”</li>
                   <li>“What's going on?” · “System health”</li>
                 </ul>
               </div>

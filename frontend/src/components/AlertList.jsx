@@ -26,7 +26,7 @@ export default function AlertList({ alerts, limit, empty = 'No alerts received t
           {(a.department || a.risk_score != null) && (
             <div className="alert-meta mono small">
               {a.department && <span>Route: {a.department}{a.dial ? ` · ${a.dial}` : ''}</span>}
-              {a.risk_score != null && <span>Risk {Math.round(a.risk_score)}</span>}
+              {a.risk_score != null && <span>Risk {Math.round(a.risk_score <= 1 ? a.risk_score * 100 : a.risk_score)}</span>}
             </div>
           )}
         </li>

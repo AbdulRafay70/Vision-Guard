@@ -319,7 +319,11 @@ WEB_PORT = 8000
 
 # Web dashboard authentication (set via .env)
 WEB_USERNAME = os.environ.get("VISIONGUARD_USER", "admin")
-WEB_PASSWORD = os.environ.get("VISIONGUARD_PASS", "visionguard")
+WEB_PASSWORD = os.environ.get("VISIONGUARD_PASS", "visionguard")  # initial password for seeded accounts
+
+# Require a signed-in operator session for /api, /video_feed, /evidence_files and /ws.
+# Set VISIONGUARD_API_AUTH=0 only for local development.
+API_AUTH_REQUIRED = os.environ.get("VISIONGUARD_API_AUTH", "1") != "0"
 
 # RTSP credentials loaded from environment (never hardcoded)
 _RTSP_USER = os.environ.get("RTSP_USER", "")
