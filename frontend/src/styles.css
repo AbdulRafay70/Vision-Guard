@@ -524,3 +524,7 @@ textarea:focus { border-color: var(--accent); outline: none; }
 .grid-deploy-controls { display: flex; align-items: flex-end; gap: 10px; }
 .field.inline { flex-direction: column; }
 .field.inline select { width: 90px; }
+
+/* Live simulation panel */
+.sim-panel .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-left: 8px; animation: pulse 1.4s ease-in-out infinite; vertical-align: middle; }
+.sim-chip { margin-left: 6px; font-size: 9px; opacity: 0.8; }

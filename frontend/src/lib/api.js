@@ -78,6 +78,8 @@ export const api = {
   deployDemo: (videos) => send('POST', '/api/demo-videos/deploy', videos ? { videos } : {}),
   deployGrid: (count) => send('POST', '/api/demo-videos/grid', { count }),
   clearGrid: () => send('POST', '/api/demo-videos/grid/clear'),
+  simStatus: () => request('/api/demo-videos/simulate'),
+  simControl: (running, rate_seconds) => send('POST', '/api/demo-videos/simulate', { running, rate_seconds }),
   clearDemo: () => send('POST', '/api/demo-videos/clear'),
 
   // locations

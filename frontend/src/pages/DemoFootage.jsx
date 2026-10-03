@@ -1,12 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, mediaUrl } from '../lib/api';
 import { can } from '../lib/roles';
-import { Play, Trash2, RefreshCw, Upload } from '../components/Icons';
+import { Play, Trash2, RefreshCw, Upload, Radio, ShieldAlert } from '../components/Icons';
 
 const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
 
 export default function DemoFootage({ user, registry, onRefresh, onDeployed, notify }) {
   const [gridCount, setGridCount] = useState(24);
+  const [sim, setSim] = useState({ running: false, rate_seconds: 6, generated: 0, demo_cameras: 0 });
+  useEffect(() => {
+    const load = () => api.simStatus().then(setSim).catch(() => {});
+    load();
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, []);
+  const toggleSim = async (running) => {
+    try { setSim(await api.simControl(running, sim.rate_seconds)); notify(running ? 'Live incident simulation started.' : 'Simulation stopped.'); }
+    catch (e) { notify(e.message, 'bad'); }
+  };
+  const setRate = async (rate) => { try { setSim(await api.simControl(sim.running, rate)); } catch (e) { notify(e.message, 'bad'); } };
   const [gridBusy, setGridBusy] = useState('');
   const admin0 = can.manageCameras(user);
 
@@ -94,6 +106,26 @@ export default function DemoFootage({ user, registry, onRefresh, onDeployed, not
             </label>
             <button className="btn btn-primary" disabled={!!gridBusy} onClick={deployGrid}>{gridBusy === 'deploy' ? 'Deploying…' : `Deploy ${gridCount} cameras`}</button>
             <button className="btn btn-ghost" disabled={!!gridBusy} onClick={clearGrid}><Trash2 size={14} /> Clear grid</button>
+          </div>
+        </section>
+      )}
+
+      {admin0 && (
+        <section className="panel grid-deploy sim-panel">
+          <div>
+            <h3>Live incident simulation {sim.running && <span className="live-dot" />}</h3>
+            <p className="muted small">Generates incidents on the demo cameras so the alert feed, Incidents page and Analytics fill up live during a demo. Every record is tagged <span className="mono">demo_simulator</span> and matches each camera's scenario — never a real detection.</p>
+            {sim.generated > 0 && <p className="muted small">{sim.generated} alerts generated this session · {sim.demo_cameras} demo cameras.</p>}
+          </div>
+          <div className="grid-deploy-controls">
+            <label className="field inline"><span>Every</span>
+              <select value={sim.rate_seconds} onChange={(e) => setRate(Number(e.target.value))}>
+                {[3, 6, 10, 15, 30].map((n) => <option key={n} value={n}>{n}s</option>)}
+              </select>
+            </label>
+            {sim.running
+              ? <button className="btn btn-ghost danger" onClick={() => toggleSim(false)}><ShieldAlert size={15} /> Stop simulation</button>
+              : <button className="btn btn-primary" onClick={() => toggleSim(true)}><Radio size={15} /> Start simulation</button>}
           </div>
         </section>
       )}

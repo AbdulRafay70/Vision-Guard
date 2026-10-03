@@ -26,6 +26,7 @@ import secrets
 import shutil
 import hashlib
 import re
+import random
 
 import config
 from camera.webcam import WebcamSource
@@ -167,6 +168,8 @@ class AppState:
         self.incident_db: IncidentDatabase = IncidentDatabase()
         self.camera_status: Dict[str, Dict[str, Any]] = {}
         self.loop = None
+        self.sim_task = None                 # asyncio Task for the demo alert simulator
+        self.sim = {"running": False, "rate_seconds": 6, "generated": 0}
         self._cam_locks: Dict[str, threading.Lock] = {}
         self._cam_locks_guard = threading.Lock()
 
@@ -265,6 +268,9 @@ async def shutdown_event():
     if state.audio_monitor is not None:
         state.audio_monitor.stop()
         logger.info("[SHUTDOWN] Audio monitor stopped")
+    state.sim["running"] = False
+    if state.sim_task:
+        state.sim_task.cancel()
 
 
 # ── Decoupled Frame Pipeline ─────────────────────────────────────────────
@@ -1091,6 +1097,30 @@ _DEMO_SCENARIOS = [
     ("accident", "Road accident — demo", "DHA"),
 ]
 
+# Clip filename keyword → incident type the camera is "watching" for
+_CLIP_EVENT = [
+    ("fire", "fire"), ("gun", "weapon_threat"), ("weapon", "weapon_threat"),
+    ("robbery", "robbery"), ("fight", "fight"), ("violence", "fight"), ("thug", "fight"),
+    ("crowd", "crowd_crush"), ("accident", "car_accident"), ("bike", "bike_accident"),
+]
+_EVENT_LABEL = {
+    "fire": "Fire / smoke", "weapon_threat": "Weapon threat", "robbery": "Armed robbery",
+    "fight": "Physical assault", "crowd_crush": "Crowd surge", "car_accident": "Road accident",
+    "bike_accident": "Bike accident", "loitering": "Loitering",
+}
+
+
+def _event_for_source(source: str) -> str:
+    low = str(source).lower()
+    for key, event in _CLIP_EVENT:
+        if key in low:
+            return event
+    return "loitering"
+
+
+def _demo_camera_ids() -> list:
+    return [cid for cid in config.CAMERAS if cid.startswith(("grid_", "demo_", "clip_"))]
+
 
 def _demo_dirs():
     return [("demo", DEMO_VIDEOS_DIR), ("uploads", config.TEST_VIDEOS_DIR)]
@@ -1289,13 +1319,26 @@ async def deploy_demo_grid(request: Request):
             if i < len(_KARACHI_GRID[area]):
                 slots.append((area, street_ids[area][i], _KARACHI_GRID[area][i]))
 
+    # Theme each area to a clip keyword so different areas show different incident types
+    _AREA_THEME = {
+        "Saddar": "fire", "Clifton": "gun", "Lyari": "fight", "Gulshan": "crowd",
+        "Nazimabad": "accident", "Orangi": "violence", "DHA": "gun", "Jauhar": "crowd",
+    }
+    def _clip_for_area(area_name):
+        kw = _AREA_THEME.get(area_name)
+        if kw:
+            m = next((c for c in clips if kw in c.name.lower()), None)
+            if m:
+                return m
+        return clips[hash(area_name) % len(clips)]
+
     deployed, created_ids = [], []
-    loop = asyncio.get_running_loop()
     for n in range(count):
         area, street_id, street_name = slots[n % len(slots)]
-        clip = clips[n % len(clips)]
+        clip = _clip_for_area(area)
         cam_id = f"grid_{n + 1:03d}"
-        name = f"{area} · {street_name}"
+        monitored = _EVENT_LABEL.get(_event_for_source(str(clip)), "")
+        name = f"{area} · {street_name}" + (f" — {monitored}" if monitored else "")
         config.CAMERAS[cam_id] = {
             "id": cam_id, "name": name, "type": "video", "source": str(clip),
             "sector": area, "enabled": True,
@@ -1329,6 +1372,98 @@ async def clear_demo_grid(request: Request):
         console_db.clear_access(cid)
     console_db.audit(user["username"], "demo_grid_cleared", detail=f"{len(removed)} removed", ip=client_ip(request))
     return JSONResponse({"removed": removed})
+
+
+# ── Demo alert simulator ──────────────────────────────────────────────────
+# Generates realistic-looking incidents on demo/grid cameras so the alert feed,
+# incidents page and analytics populate live during a demonstration. Every
+# record is tagged source="demo_simulator" so it is never mistaken for a real
+# AI detection.
+
+async def _demo_simulator_loop():
+    while state.sim["running"]:
+        try:
+            cams = _demo_camera_ids()
+            if not cams:
+                await asyncio.sleep(2)
+                continue
+            cam_id = random.choice(cams)
+            cfg = config.CAMERAS.get(cam_id, {})
+            event_type = _event_for_source(cfg.get("source", ""))
+            routing = config.DEPARTMENT_ROUTING.get(event_type, {})
+            priority = routing.get("priority", "HIGH")
+            base = {"CRITICAL": 0.9, "HIGH": 0.72, "MEDIUM": 0.5, "LOW": 0.32}.get(priority, 0.6)
+            risk = round(min(0.98, max(0.3, random.gauss(base, 0.06))), 2)
+            risk_level = "CRITICAL" if risk >= 0.9 else "HIGH" if risk >= 0.7 else "MEDIUM" if risk >= 0.4 else "LOW"
+            sector = cfg.get("sector") or "Saddar"
+            label = _EVENT_LABEL.get(event_type, event_type.replace("_", " ").title())
+            description = f"{label} detected at {cfg.get('name', cam_id)} ({sector})."
+
+            incident = None
+            if state.incident_db:
+                try:
+                    incident = await asyncio.to_thread(
+                        state.incident_db.add_incident,
+                        sector=sector, event_type=event_type, risk_score=risk, risk_level=risk_level,
+                        camera_id=cam_id, source="demo_simulator", description=description,
+                    )
+                except Exception as e:
+                    logger.debug("[SIM] add_incident failed: %s", e)
+
+            await manager.broadcast({
+                "type": "NEW_ALERT",
+                "event_type": event_type,
+                "emoji": EVENT_EMOJI.get(event_type, "⚠️"),
+                "risk_score": risk,
+                "risk_level": risk_level,
+                "description": description,
+                "department": routing.get("dept", "Sindh Police"),
+                "dial": routing.get("dial", "15"),
+                "timestamp": datetime.now().isoformat(),
+                "incident_code": incident["id"] if incident else None,
+                "camera_id": cam_id,
+                "camera_name": cfg.get("name", cam_id),
+                "sector": sector,
+                "simulated": True,
+            })
+            state.sim["generated"] += 1
+        except Exception as e:
+            logger.debug("[SIM] loop error: %s", e)
+        # Jittered interval around the configured rate
+        rate = max(1, int(state.sim.get("rate_seconds", 6)))
+        await asyncio.sleep(random.uniform(rate * 0.5, rate * 1.5))
+
+
+@app.get("/api/demo-videos/simulate")
+async def demo_sim_status(request: Request):
+    current_user(request)
+    return JSONResponse({**state.sim, "demo_cameras": len(_demo_camera_ids())})
+
+
+@app.post("/api/demo-videos/simulate")
+async def demo_sim_control(request: Request):
+    """Start or stop the live demo alert simulator. Body: {"running": true, "rate_seconds": 6}."""
+    user = require_role(request, CAMERA_ADMIN_ROLES)
+    data = await _json_body(request) if (await request.body()) else {}
+    if "rate_seconds" in data:
+        try:
+            state.sim["rate_seconds"] = max(1, min(60, int(data["rate_seconds"])))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="rate_seconds must be a number")
+    running = bool(data.get("running", True))
+    if running and not _demo_camera_ids():
+        raise HTTPException(status_code=400, detail="Deploy demo cameras or a city grid first.")
+    if running and not state.sim["running"]:
+        state.sim["running"] = True
+        state.sim_task = asyncio.create_task(_demo_simulator_loop())
+        console_db.audit(user["username"], "demo_sim_started", detail=f"rate={state.sim['rate_seconds']}s", ip=client_ip(request))
+    elif not running and state.sim["running"]:
+        state.sim["running"] = False
+        if state.sim_task:
+            state.sim_task.cancel()
+            state.sim_task = None
+        console_db.audit(user["username"], "demo_sim_stopped", detail=f"generated={state.sim['generated']}", ip=client_ip(request))
+    return JSONResponse({**state.sim, "demo_cameras": len(_demo_camera_ids())})
 
 
 @app.post("/api/demo-videos/clear")
