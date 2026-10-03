@@ -285,6 +285,16 @@ AUDIO_DEVICE = None                   # None = system default microphone (or int
 AUDIO_EVENT_MEMORY_SECONDS = 5.0      # Rolling window of recent audio events kept for fusion
 AUDIO_QUEUE_MAXSIZE = 8               # Microphone→classifier waveform queue depth
 
+# Video-file audio (gunshot / scream / distress speech from the video's own
+# soundtrack, kept in sync with playback) + context filtering so concerts,
+# matches, weddings (music, cheering, fireworks) don't raise false alarms.
+AUDIO_FROM_VIDEO = os.environ.get("VISIONGUARD_VIDEO_AUDIO", "true").lower() == "true"
+AUDIO_HISTORY_SECONDS = 30.0          # Rolling scene context used to judge if a scream is unusual
+AUDIO_SPEECH_ENABLED = os.environ.get("VISIONGUARD_SPEECH", "true").lower() == "true"
+AUDIO_SPEECH_MODEL = os.environ.get("VISIONGUARD_SPEECH_MODEL", "base")   # tiny / base / small
+AUDIO_SPEECH_LANGUAGE = os.environ.get("VISIONGUARD_SPEECH_LANG") or None  # None = auto (en / ur)
+AUDIO_SPEECH_MAX_UTTERANCE = 6.0      # Max seconds of buffered speech before forcing a transcription
+
 # ═══════════════════════════════════════════════════════
 # VOICE COMMANDS (Gemini) — credentials from .env
 # ═══════════════════════════════════════════════════════

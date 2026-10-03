@@ -156,6 +156,35 @@ class AppState:
         from events.incident_db import IncidentDatabase
         self.incident_db: IncidentDatabase = IncidentDatabase()
 
+    def _shared_audio_models(self):
+        """Load YAMNet / Whisper once and share them across every audio stream."""
+        if getattr(self, "_audio_models", None) is None:
+            from ai.audio import AudioClassifier
+            classifier = AudioClassifier()
+            transcriber = None
+            if config.AUDIO_SPEECH_ENABLED:
+                from ai.speech import SpeechTranscriber
+                transcriber = SpeechTranscriber()
+            self._audio_models = (classifier, transcriber)
+        return self._audio_models
+
+    def attach_video_audio(self, cam_id: str, source) -> bool:
+        """Listen to a video file's own soundtrack (gunshots, screams, 'help')."""
+        if not config.AUDIO_FROM_VIDEO or self.audio_monitor is None:
+            return False
+        try:
+            from ai.video_audio import VideoAudioMonitor, AudioThreatProcessor
+            classifier, transcriber = self._shared_audio_models()
+            mon = VideoAudioMonitor.for_source(
+                source, camera_id=cam_id,
+                processor=AudioThreatProcessor(classifier=classifier, transcriber=transcriber))
+            if mon.start():
+                self.audio_monitor.add(cam_id, mon)
+                return True
+        except Exception as e:
+            logger.warning("[AUDIO] Video audio for '%s' unavailable: %s", cam_id, e)
+        return False
+
     def initialize(self):
         """Initialize camera sources, AI pipeline, and event engine."""
         if self.pipeline is None:
@@ -164,15 +193,18 @@ class AppState:
 
         # Start live microphone audio monitor (Day 4 — Rafay) before the engine
         # so emergency sounds (gunshot/explosion/scream) fuse into alerts.
+        # All audio sources (microphone + each video file's soundtrack) feed
+        # one CompositeAudioMonitor so the engine sees every suspicious sound.
+        from ai.video_audio import CompositeAudioMonitor
+        self.audio_monitor = CompositeAudioMonitor()
         if config.AUDIO_ENABLED:
             try:
                 from ai.audio import AudioMonitor
-                self.audio_monitor = AudioMonitor()
-                if not self.audio_monitor.start():
-                    self.audio_monitor = None
+                mic = AudioMonitor(classifier=self._shared_audio_models()[0])
+                if mic.start():
+                    self.audio_monitor.add("__microphone__", mic)
             except Exception as e:
                 logger.warning("[INIT] Audio monitor unavailable: %s", e)
-                self.audio_monitor = None
 
         if self.event_engine is None:
             self.event_engine = EventEngine(audio_monitor=self.audio_monitor)
@@ -216,6 +248,8 @@ class AppState:
                 if source and source.start():
                     self.camera_sources[cam_id] = source
                     logger.info("[INIT] Camera '%s' started", cam_id)
+                    if cam_info["type"] == "video":
+                        self.attach_video_audio(cam_id, source)
 
                     # Create and start decoupled pipeline for this camera
                     stream_pipeline = CameraStreamPipeline(
@@ -761,13 +795,21 @@ async def connect_camera(request: Request):
     stream_pipeline.start(asyncio_loop=asyncio_loop)
     state.pipelines[cam_id] = stream_pipeline
 
+    # Hear the video's own soundtrack (model load can be slow → off the event loop)
+    audio_from_video = False
+    if cam_type == "video":
+        audio_from_video = await asyncio.to_thread(state.attach_video_audio, cam_id, source)
+    elif state.audio_monitor is not None:
+        state.audio_monitor.remove(cam_id)
+
     logger.info("[CONNECT] Camera '%s' (%s: %s) started successfully", cam_id, cam_type, cam_name)
     return JSONResponse({
         "status": "connected",
         "id": cam_id,
         "name": cam_name,
         "type": cam_type,
-        "active": True
+        "active": True,
+        "audio_from_video": audio_from_video,
     })
 
 
@@ -784,6 +826,9 @@ async def disconnect_camera(camera_id: str):
             logger.warning("[DISCONNECT] Error stopping pipeline '%s': %s", camera_id, e)
         del state.pipelines[camera_id]
         found = True
+
+    if state.audio_monitor is not None:
+        state.audio_monitor.remove(camera_id)
 
     if camera_id in state.camera_sources:
         try:
@@ -1105,7 +1150,7 @@ _recent_sound_events = []
 @app.get("/api/audio/status")
 async def get_audio_status():
     """Return acoustic monitoring layer status and recent acoustic events."""
-    active = state.audio_monitor is not None
+    active = state.audio_monitor is not None and len(state.audio_monitor) > 0
     return JSONResponse({
         "audio_layer_active": True,
         "microphone_hardware": "Integrated Dual-Mic Array" if active else "Simulated Acoustic Sensor",

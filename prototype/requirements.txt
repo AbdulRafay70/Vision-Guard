@@ -20,6 +20,10 @@ filterpy>=1.4.5
 # Audio classification (Optional / Event features)
 sounddevice>=0.4.6
 soundfile>=0.12.0
+tensorflow>=2.13.0        # YAMNet sound-event model (gunshot / scream / glass ...)
+tensorflow-hub>=0.14.0
+faster-whisper>=1.0.0     # Speech-to-text for distress words ("help", "bachao", threats)
+# ffmpeg must be on PATH to read the audio track of video files
 
 # LLM & Multimodal AI
 google-genai>=0.1.0

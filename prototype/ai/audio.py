@@ -72,20 +72,9 @@ class AudioClassifier:
         if not self.is_loaded or self.yamnet_model is None:
             return []
 
-        # Ensure correct dtype
-        waveform = np.asarray(waveform, dtype=np.float32)
-
-        # Run YAMNet model
-        scores, embeddings, spectrogram = self.yamnet_model(waveform)
-        scores_np = scores.numpy()
-
-        # Average prediction across frames in this audio window
-        mean_scores = scores_np.mean(axis=0)
-
         events = []
-        for class_idx, score in enumerate(mean_scores):
+        for name, score in self.score_waveform(waveform, sample_rate).items():
             if score >= config.AUDIO_CONFIDENCE_THRESHOLD:
-                name = self.class_names[class_idx]
 
                 # Check if this class matches an emergency sound category
                 for emergency_keyword in config.AUDIO_EMERGENCY_CLASSES:
@@ -98,6 +87,24 @@ class AudioClassifier:
                         break
 
         return events
+
+
+    def score_waveform(self, waveform: np.ndarray, sample_rate: int = 16000) -> Dict[str, float]:
+        """
+        Return {class_name: score} for every YAMNet class. Uses the max over
+        the ~0.48 s YAMNet frames so short impulses (a single gunshot) are not
+        averaged away across the chunk.
+        """
+        if not self.is_loaded or self.yamnet_model is None:
+            return {}
+        waveform = np.asarray(waveform, dtype=np.float32)
+        scores, _emb, _spec = self.yamnet_model(waveform)
+        s = scores.numpy()
+        if s.ndim == 2 and len(s):
+            pooled = np.maximum(s.max(axis=0) * 0.85, s.mean(axis=0))
+        else:
+            pooled = np.zeros(len(self.class_names))
+        return {self.class_names[i]: float(v) for i, v in enumerate(pooled) if v >= 0.02}
 
 
 class AudioMonitor:
@@ -134,11 +141,15 @@ class AudioMonitor:
         self._stream = None
         self._sd = None
         self.running: bool = False
+        self.processor = None
 
     def start(self) -> bool:
         """Load YAMNet (if needed) and open the microphone listener thread."""
-        if not self.classifier.is_loaded:
-            self.classifier.load()
+        from ai.video_audio import AudioThreatProcessor
+        self.processor = AudioThreatProcessor(classifier=self.classifier,
+                                              sample_rate=self.sample_rate,
+                                              chunk_seconds=self.chunk_seconds)
+        self.processor.load()
         if not self.classifier.is_loaded:
             logger.warning("[AUDIO] YAMNet unavailable — microphone monitor not started.")
             return False
@@ -200,7 +211,9 @@ class AudioMonitor:
                 break
 
             try:
-                events = self.classifier.classify_waveform(waveform, self.sample_rate)
+                # Context-aware: music / cheering / fireworks suppress false
+                # screams & bangs; speech is checked for distress words.
+                events = self.processor.process(waveform)
             except Exception as e:
                 logger.debug("[AUDIO] Classification error: %s", e)
                 continue

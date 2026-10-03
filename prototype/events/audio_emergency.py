@@ -26,6 +26,13 @@ _SOUND_RISK = {
     "crash": 75,
     "glass": 60,
     "siren": 40,
+    # Speech-based (keyword spotting on the transcript)
+    "threat_speech": 90,
+    "threatening": 90,
+    "weapon_speech": 85,
+    "weapon": 85,
+    "distress_speech": 85,
+    "distress": 85,
 }
 
 
@@ -58,7 +65,7 @@ class AudioEmergencyDetector(BaseEventDetector):
         best = None
         best_risk = -1
         for ev in events:
-            risk = self._risk_for(ev.sound_class)
+            risk = self._risk_for(getattr(ev, "category", "") or ev.sound_class)
             if risk > best_risk:
                 best_risk = risk
                 best = ev
@@ -72,6 +79,9 @@ class AudioEmergencyDetector(BaseEventDetector):
             "base_risk": best_risk,
             "num_sounds": len(events),
             "all_sounds": sorted(set(e.sound_class for e in events)),
+            "transcript": getattr(best, "transcript", ""),
+            "context": getattr(best, "context", ""),
+            "camera_id": getattr(best, "camera_id", None),
         }
 
     @staticmethod
@@ -104,6 +114,9 @@ class AudioEmergencyDetector(BaseEventDetector):
         extra = ""
         if len(others) > 1:
             extra = f" | Also heard: {', '.join(o for o in others if o != sound)}"
+        said = signals.get("transcript")
+        if said:
+            extra += f' | Heard: "{said[:120]}"'
         return (
             f"🔊 AUDIO EMERGENCY: {sound} detected | "
             f"Confidence: {conf * 100:.0f}% | "
