@@ -1,5 +1,5 @@
-# 🛡️ VisionGuard ULTRA — Guide for One Presenter
-**One person tells the full story: talk → show demo → explain → answer questions.**
+# 🛡️ VisionGuard ULTRA — Solo Guide for Abdul Rafay
+**Abdul Rafay (Team Lead) tells the full story alone: talk → show demo → explain → answer questions.**
 
 > Simple English is used. Hard words have Urdu meaning in brackets, like this: *detect (پتا لگانا)*.
 
@@ -8,7 +8,7 @@
 ## Introduction (تعارف)
 
 ### What is this document?
-This is a guide for **one person** who will present (پیش کرنا) VisionGuard ULTRA alone. You can use it with judges at the stall, on stage, in a viva, or on an online call.
+This is a guide for **Abdul Rafay** to present (پیش کرنا) VisionGuard ULTRA alone, for the full team. You can use it with judges at the stall, on stage, in a viva, or on an online call.
 Read it fully one time. Then practice (مشق) sections 2 and 4 out loud. Keep the small card (section 7) in your pocket.
 
 ### Our project in 30 seconds
@@ -21,9 +21,25 @@ Read it fully one time. Then practice (مشق) sections 2 and 4 out loud. Keep t
 Made by Abdul Rafay, Moiz, Areeba and Aqib for the Alibaba AI Hackathon 2026.
 
 ### How to introduce yourself (say this first)
-> "Assalam-o-Alaikum. My name is **[your name]**. I am the **[your role]** in team **VisionGuard**. My team is Abdul Rafay, Moiz, Areeba and Aqib. Today I will show you how we make normal CCTV cameras smart. Our system can **find a problem, decide, and send help** — very fast."
+> "Assalam-o-Alaikum. My name is **Abdul Rafay**. I am the **team lead** of team **VisionGuard**. I built the main AI system — the part that runs all the models together in real time. My team is **Moiz**, who trained our AI models, **Areeba**, who prepared and tested the data, and **Aqib**, who made the website. Today I will show you how we make normal CCTV cameras smart. Our system can **find a problem, decide, and send help** — very fast."
 
-Tips: Smile. Say your name slowly. Keep it short (15 seconds).
+Tips: Smile. Say your name slowly. Keep it short (15–20 seconds).
+
+### Your work vs. team work — know the difference (فرق)
+Judges may ask "What did **you** do?" Be clear and fair (منصفانہ):
+
+| Part | Who made it | How you say it |
+|---|---|---|
+| AI pipeline (`pipeline.py`), camera input, Event Engine (12 checks), voice commands, FastAPI server | **You (Abdul Rafay)** | "**I** built…" |
+| Training fire, gun and fight models | **Moiz** | "**Moiz** trained… I connected them to the system." |
+| Data cleaning, augmentation, testing, false-alarm study | **Areeba** | "**Areeba** prepared and tested…" |
+| React dashboard, design, control room screen | **Aqib** | "**Aqib** designed…" |
+
+Always give credit (کریڈٹ) to teammates by name. Judges like a lead who respects the team.
+
+### If a judge asks something from a teammate's part
+You know the basic answer (section 3). If it goes very deep, say:
+> "Moiz did the training in detail. The main idea is… If you want, I can share his exact training settings later."
 
 ### How to use this guide
 | If you have… | Read this |
@@ -68,7 +84,7 @@ Change length by your time:
 | **1 minute** | Hook + 1 line problem + solution + 1 video (fire or gun) + end |
 | **3 minutes** | Full plan below, show 2 videos |
 | **5–7 minutes** | Full plan + 3–4 videos + system diagram + future plans |
-| **10+ minutes (viva)** | Everything + show code (`pipeline.py`, `events/engine.py`) + data part |
+| **10+ minutes (viva)** | Everything + show **your own code** (`prototype/ai/pipeline.py`, `prototype/events/engine.py`, `prototype/voice/interpreter.py`, `prototype/web/server.py`) + team's data part |
 
 ---
 
@@ -133,7 +149,7 @@ Main points:
 - **Future:** test it on real city cameras, use it in hospitals, schools and factories (see `prototype/MULTI_SECTOR_EXPANSION_PLAN.md`), connect directly to the helplines, collect more local Karachi data.
 
 ### Step 7 — End (about 15 seconds)
-> "Cameras are already there. VisionGuard gives them a brain. **Find, decide, send help — in less than one second.** Thank you. We are happy to take your questions."
+> "Cameras are already there. VisionGuard gives them a brain. **Find, decide, send help — in less than one second.** This was built by Moiz, Areeba, Aqib and me. Thank you. I am happy to take your questions."
 
 Then **stop talking**. Silence (خاموشی) invites questions.
 
@@ -187,6 +203,7 @@ Keep each answer **under 30 seconds**.
 
 | Situation | What to do / say |
 |---|---|
+| **Judge asks "What did YOU do?"** | "I am the team lead. I built the main AI pipeline, the event engine with 12 checks, the voice commands and the server. I also connected everyone's work into one system." |
 | **You do not know the answer** | "Good question. I don't want to guess. What I know is… I will send you the exact details later." Never make up numbers. |
 | **Judge says "this is not new"** | "Yes, finding objects is not new. Our new part is putting many dangers, two checks, evidence and alerts together in one fast system for our cities." |
 | **Judge doubts (شک) a number** | "Fair point. These numbers are from our test computer and demo videos. A real city test is our next step." Being honest is better than fighting. |
@@ -240,6 +257,7 @@ Say this when you switch: *"Let me show you the recorded run, so we don't waste 
 ## 7. Small Card (print this)
 
 ```
+INTRO    Abdul Rafay, team lead, built AI pipeline. Team: Moiz, Areeba, Aqib.
 HOOK     20 million people. Cameras record. Nobody watches.
 PROBLEM  Cameras only record, people get tired, help comes late, many dangers.
 SOLUTION Smart cameras: Find → Decide → Send help.
@@ -247,6 +265,6 @@ DEMO     Dashboard → fire.mp4 → gun/fight → risk score → Incidents (SHA-
 HOW      YOLOv8 → ByteTrack → Pose → Special models → Event Engine → Risk → Alert
          separate parts · two checks · time check · small computer
 BENEFIT  Use old cameras, faster help, more areas in future.
-END      "Cameras are there. We give them a brain." → stop, ask for questions.
+END      "Cameras are there. We give them a brain." + thank team → questions.
 BROKEN   run_web.py · npm run dev · desktop app · backup video
 ```
