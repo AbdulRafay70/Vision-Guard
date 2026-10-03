@@ -23,7 +23,7 @@ This is the guide for presenting (پیش کرنا) **VisionGuard ULTRA as a team
 - It can **detect (پتا لگانا)** fire, fights, guns, big crowds, road accidents, and bags left alone.
 - It gives a **risk score (خطرے کا نمبر)** from 0 to 100.
 - It saves the video as **evidence (ثبوت)** that nobody can change secretly.
-- It sends the alert to the right number: **Police 15, Fire 16, Rescue 1122**.
+- It sends the alert to the right number: **Police 15, Fire 16, Edhi 115, Rescue 1122**.
 
 Made for the Alibaba AI Hackathon 2026.
 
@@ -139,7 +139,7 @@ Made for the Alibaba AI Hackathon 2026.
 ### 🧠 Moiz — Models and Training (3:30–4:30)
 - "The base is **YOLOv8**. It finds objects like people, cars and bags. **YOLOv8-Pose** finds 17 points on the body. **ByteTrack** gives each person a fixed ID number, so we can follow them."
 - "Then we **trained (تربیت دی) three special models** on Google Colab: one for **fights**, one for **fire and smoke** (D-Fire data), and one for **guns**."
-- "Why YOLOv8? It is fast on a small computer. We get 24–30 frames per second on a 4 GB Quadro T1000. And one tool can do objects, body points and classification."
+- "Why YOLOv8? It is fast on a small computer. Our separate-thread design made it 43% faster on a 4 GB Quadro T1000 (7 → 10 FPS at 720p). And one tool can do objects, body points and classification."
 - "The video part and the AI part run **separately (الگ الگ)**. So the video never freezes (رکتی نہیں)."
 
 **Pass the turn →** *"But a fast model is useless if it gives wrong alarms. Areeba."*
@@ -199,8 +199,8 @@ Cameras / Mic / SOS → YOLOv8 → ByteTrack → Pose → Special models
 |---|---|
 | Why YOLOv8, not RT-DETR / Faster R-CNN? | YOLOv8 is fast and light. Faster R-CNN is too slow for many cameras. Transformers need a strong computer. YOLOv8 does objects + body points + classification in one tool. **(Moiz)** |
 | What about hugging or sports — false alarm? | Fast movement starts a check → fight model checks again → event must continue for some time → limits can be changed. **(Areeba)** |
-| How accurate (درست) is it? | Only real numbers from the report. If not ready: "We are finishing the final test report. The system checks two times before an alert." **(Areeba)** |
-| How fast? | 24–30 FPS, 28–42 ms AI per frame, alert in less than 300 ms, on Quadro T1000 4 GB. **(Moiz)** |
+| How accurate (درست) is it? | Fire model: precision 47.6%, mAP@50 16% — 2× the old colour method; hard dataset with tiny fires; time checks catch events over many frames. Weapon and violence reports still being finished. **(Areeba)** |
+| How fast? | Measured on Quadro T1000 4 GB: 7 → 10 FPS at 720p (+43%), 48% fewer dropped frames. Target 22+ FPS after tuning. **(Moiz)** |
 | Can it work with 1000 cameras? | Yes, add more small GPU computers. Main server only gets alerts. **(Rafay)** |
 | What if internet stops? | Detection works locally. Voice and report have offline backup. **(Rafay)** |
 | Is this spying (جاسوسی)? | No. We check actions, not faces. No face database. Only logged-in people see data. Evidence has a fingerprint. **(Areeba)** |
@@ -268,7 +268,7 @@ While Aqib fixes it, **Rafay keeps talking** and explains the system diagram. Ma
 ```
 RAFAY  Introduction → Hook → Problem → Solution → "Aqib, please show them."
 AQIB   Dashboard → fire → fight/gun → risk score → Incidents/SHA-256 → voice → "Moiz."
-MOIZ   YOLOv8 + Pose + ByteTrack → 3 trained models → 24–30 FPS, separate parts → "Areeba."
+MOIZ   YOLOv8 + Pose + ByteTrack → 3 trained models → 43% faster, separate parts → "Areeba."
 AREEBA Clean data → two checks + time check → real numbers → privacy → "Rafay."
 RAFAY  System diagram → many cameras / no internet → future → END (all step forward)
 Q&A    Rafay gives questions · one person talks · under 30 sec · never make up numbers
