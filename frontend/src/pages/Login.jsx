@@ -20,10 +20,10 @@ export default function Login({ onSignIn }) {
     if (!username || !password) { setError('Enter your operator ID and password.'); return; }
     setBusy(true);
     try {
-      const res = await api.login(username, password);
-      onSignIn({ user: res.user || username, station, since: Date.now() });
+      const res = await api.login(username, password, station);
+      await onSignIn(res);
     } catch (err) {
-      setError(err.message.includes('credentials') ? 'Operator ID or password is incorrect.' : 'Unable to reach the authentication server.');
+      setError(err.status ? err.message : 'Unable to reach the authentication server.');
     } finally {
       setBusy(false);
     }
@@ -72,7 +72,43 @@ export default function Login({ onSignIn }) {
           {error && <div className="notice notice-error"><CircleAlert size={16} />{error}</div>}
 
           <button className="btn btn-primary btn-block" disabled={busy}>{busy ? 'Verifying…' : 'Sign in'}</button>
-          <p className="fineprint">Unauthorised access to this system is an offence. Sessions end when the browser tab is closed.</p>
+          <p className="fineprint">Unauthorised access to this system is an offence. Sessions expire after 12 hours or when the browser tab is closed. Five failed attempts lock the account for 15 minutes.</p>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+export function ForcePasswordChange({ user, onDone, onCancel }) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (next.length < 8) { setError('New password must be at least 8 characters.'); return; }
+    if (next !== confirm) { setError('The new passwords do not match.'); return; }
+    setBusy(true);
+    try { await api.changePassword(current, next); await onDone(); } catch (err) { setError(err.message); }
+    setBusy(false);
+  };
+
+  return (
+    <div className="login">
+      <div className="classification">Restricted · Authorised personnel only · All activity is logged</div>
+      <div className="login-body single">
+        <form className="login-form" onSubmit={submit} noValidate>
+          <h2>Set a new password</h2>
+          <p className="muted">Signed in as <strong>{user.username}</strong>. Your password was issued by an administrator and must be changed before you continue.</p>
+          <label className="field"><span>Current password</span><input type="password" autoComplete="current-password" autoFocus value={current} onChange={(e) => setCurrent(e.target.value)} /></label>
+          <label className="field"><span>New password</span><input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} /></label>
+          <label className="field"><span>Confirm new password</span><input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} /></label>
+          {error && <div className="notice notice-error"><CircleAlert size={16} />{error}</div>}
+          <button className="btn btn-primary btn-block" disabled={busy}>{busy ? 'Saving…' : 'Change password and continue'}</button>
+          <button type="button" className="btn btn-ghost btn-block" onClick={onCancel}>Sign out</button>
         </form>
       </div>
     </div>
