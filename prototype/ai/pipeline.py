@@ -33,6 +33,8 @@ class FrameAnalysis:
     tracks: List[Track] = field(default_factory=list)
     poses: List[PoseResult] = field(default_factory=list)
     violence_results: List[Dict[str, Any]] = field(default_factory=list)  # Neural fight verification
+    action_fight_prob: float = 0.0       # Clip-level (temporal) fight probability, 0 if unavailable
+    action_clip_id: int = 0              # Increments per new clip inference (dedupe repeated cache reads)
     specialist_telemetry: Dict[str, Any] = field(default_factory=dict)
     ai_fps: float = 0.0
     processing_time_ms: float = 0.0
@@ -138,6 +140,7 @@ class AIPipeline:
 
         self.detector.load()
         self.pose_estimator.load()
+        self.specialist_worker.action.load()
 
         # Warmup: run dummy inference to trigger CUDA kernel JIT compilation
         logger.info("  Warming up models...")
@@ -251,6 +254,13 @@ class AIPipeline:
         if viol_res and viol_res.is_display_valid and viol_res.data:
             violence_results = viol_res.data
 
+        # Step 6: TEMPORAL ACTION RECOGNITION — clip-level fight probability
+        action_prob, action_clip = 0.0, 0
+        act_res = specialist_results.get("action")
+        if act_res and act_res.is_event_valid and act_res.data:
+            action_prob = act_res.data.get("fight_prob", 0.0)
+            action_clip = act_res.data.get("clip_id", 0)
+
         # Calculate Primary AI presentation metrics
         elapsed = time.monotonic() - self._start_time
         ai_fps = self._ai_frame_count / elapsed if elapsed > 0 else 0.0
@@ -263,6 +273,8 @@ class AIPipeline:
             tracks=tracks,
             poses=poses,
             violence_results=violence_results,
+            action_fight_prob=action_prob,
+            action_clip_id=action_clip,
             specialist_telemetry=telemetry,
             ai_fps=round(ai_fps, 1),
             processing_time_ms=processing_time,

@@ -199,7 +199,11 @@ class FightDetector(BaseEventDetector):
         # Evidence of active fighting in this frame
         striking = strikers >= 1 or aggressive_poses >= 2 or \
             (aggressive_poses >= 1 and high_velocity_persons >= 1)
-        if not (striking or violence_confirmed or weapon_present):
+        # Temporal clip model (ai/action_recognizer.py): judges ~2s of motion
+        action_prob = getattr(analysis, "action_fight_prob", 0.0)
+        action_fight = action_prob >= config.FIGHT_ACTION_THRESHOLD
+
+        if not (striking or violence_confirmed or weapon_present or action_fight):
             return None
 
         return {
@@ -218,6 +222,9 @@ class FightDetector(BaseEventDetector):
             "weapon_names": weapon_names,
             "violence_confirmed": violence_confirmed,
             "violence_confidence": violence_confidence,
+            "action_prob": action_prob,
+            "action_fight": action_fight,
+            "action_clip_id": getattr(analysis, "action_clip_id", 0),
             "persons_involved": [close_pairs[0]["person1"], close_pairs[0]["person2"]],
         }
 
@@ -236,7 +243,15 @@ class FightDetector(BaseEventDetector):
         # firefighters holding a hose as 100% violent. It must be backed by at
         # least one real strike seen in the poses.
         classifier_backed = violent_frames >= 2 and strike_frames >= 1
-        if not (repeated_striking or classifier_backed or latest.get("weapon_present")):
+        # Temporal clip evidence: distinct clips (not repeated cache reads) that
+        # the action model judged to be fighting. This is the primary signal —
+        # it sees motion over ~2s the way a human does.
+        fight_clips = {s.get("action_clip_id") for s in signal_window
+                       if s.get("action_fight") and s.get("action_clip_id")}
+        peak_action = max((s.get("action_prob", 0.0) for s in signal_window), default=0.0)
+        action_backed = len(fight_clips) >= 2 or (len(fight_clips) >= 1 and strike_frames >= 1)
+
+        if not (action_backed or repeated_striking or classifier_backed or latest.get("weapon_present")):
             return 0
 
         score = 15  # Close contact
@@ -254,6 +269,13 @@ class FightDetector(BaseEventDetector):
 
         if latest.get("weapon_present", False):
             score += 25
+
+        if fight_clips:
+            score += 25                      # Temporal model sees fighting motion
+            if len(fight_clips) >= 3:
+                score += 10
+            if peak_action >= 0.75:
+                score += 10
 
         if violent_frames:
             score += 20
@@ -281,6 +303,8 @@ class FightDetector(BaseEventDetector):
         if signals.get("violence_confirmed", False):
             conf = signals.get("violence_confidence", 0.0)
             violence_info = f" | 🧠 Neural-confirmed violence ({conf * 100:.0f}%)"
+        if signals.get("action_prob", 0.0) > 0:
+            violence_info += f" | 🎞️ Motion model: {signals['action_prob'] * 100:.0f}% fight"
         return (
             f"Street fight detected | "
             f"{signals['num_persons']} persons, {signals['close_pairs']} close pair(s) | "

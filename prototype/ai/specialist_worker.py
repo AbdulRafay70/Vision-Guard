@@ -153,6 +153,7 @@ class SpecialistWorker:
             "pose": SpecialistResult("pose", 0, now, now, 0.0, []),
             "violence": SpecialistResult("violence", 0, now, now, 0.0, []),
             "normal_scene": SpecialistResult("normal_scene", 0, now, now, 0.0, []),
+            "action": SpecialistResult("action", 0, now, now, 0.0, {}),
         }
 
         # Monotonic timers and execution counters
@@ -162,6 +163,7 @@ class SpecialistWorker:
             "pose": 0.0,
             "violence": 0.0,
             "normal_scene": 0.0,
+            "action": 0.0,
         }
         self._specialist_fps: Dict[str, float] = {
             "fire": 0.0,
@@ -169,6 +171,7 @@ class SpecialistWorker:
             "pose": 0.0,
             "violence": 0.0,
             "normal_scene": 0.0,
+            "action": 0.0,
         }
         self._run_counts: Dict[str, int] = {
             "fire": 0,
@@ -176,12 +179,31 @@ class SpecialistWorker:
             "pose": 0,
             "violence": 0,
             "normal_scene": 0,
+            "action": 0,
         }
         self._normal_scene_conf: float = 0.0
         self._governor_decision: str = "Initializing context governor"
         self._current_scene_state: SceneState = SceneState.NORMAL
         self._start_time = time.monotonic()
         self._fire_buffer: List[Detection] = []
+
+        # Clip-based temporal fight recognition (see ai/action_recognizer.py)
+        from ai.action_recognizer import ActionRecognizer, FrameHistory
+        self.action = ActionRecognizer()
+        self.history = FrameHistory()
+
+    @staticmethod
+    def _close_people(tracks: List[Track]) -> List[Track]:
+        """People within ~1.2 body heights of another person (potential physical interaction)."""
+        persons = [t for t in tracks if t.category == "person"]
+        close = set()
+        for i, a in enumerate(persons):
+            for b in persons[i + 1:]:
+                ha = max(1.0, a.bbox[3] - a.bbox[1]); hb = max(1.0, b.bbox[3] - b.bbox[1])
+                d = ((a.center[0] - b.center[0]) ** 2 + (a.center[1] - b.center[1]) ** 2) ** 0.5
+                if d < 1.2 * (ha + hb) / 2:
+                    close.add(a.track_id); close.add(b.track_id)
+        return [p for p in persons if p.track_id in close]
 
     def start(self):
         """Start the background worker thread."""
@@ -210,6 +232,7 @@ class SpecialistWorker:
         Evaluates scene state (NORMAL, SUSPICIOUS, or ALERT) and updates single-slot buffer.
         """
         scene_state = self._evaluate_scene_state(tracks)
+        self.history.push(frame, capture_timestamp)
         self.frame_slot.update(frame, frame_id, capture_timestamp, tracks, scene_state)
 
     def _evaluate_scene_state(self, tracks: List[Track]) -> SceneState:
@@ -273,6 +296,8 @@ class SpecialistWorker:
                     self._run_violence(frame, frame_id, capture_timestamp, tracks)
                 elif task == "normal_scene":
                     self._run_normal_scene(frame, frame_id, capture_timestamp)
+                elif task == "action":
+                    self._run_action(frame_id, capture_timestamp, tracks)
             except Exception as e:
                 logger.error("[WORKER] Error in specialist %s: %s", task, e, exc_info=True)
 
@@ -341,6 +366,10 @@ class SpecialistWorker:
                 candidates.append(("weapon", (now - self._last_run_time["weapon"]) / 0.50, 0.9))  # ~2 FPS
             if num_persons >= 2:
                 candidates.append(("violence", (now - self._last_run_time["violence"]) / 0.50, 0.9))
+
+        # Temporal clip-based fight recognition whenever people are physically close
+        if self.action.model is not None and len(self._close_people(tracks)) >= 2:
+            candidates.append(("action", (now - self._last_run_time["action"]) / 0.40, 1.25))
 
         # Filter only tasks whose target interval has arrived (overdue_ratio >= 1.0)
         ready_tasks = [c for c in candidates if c[1] >= 1.0]
@@ -436,6 +465,31 @@ class SpecialistWorker:
                     inference_time_ms=lat
                 )
 
+    def _run_action(self, frame_id: int, capture_timestamp: float, tracks: List[Track]):
+        """Classify the last ~2 s of video around the interacting people."""
+        t0 = time.monotonic()
+        close = self._close_people(tracks)
+        frames, scale = self.history.sample()
+        if len(close) < 2 or not frames:
+            return
+        boxes = [[c * scale for c in p.bbox] for p in close]
+        box = self.action.square_crop_box(boxes, frames[-1].shape)
+        prob = self.action.predict(frames, box)
+        if prob is None:
+            return
+        now = time.monotonic()
+        with self._lock:
+            self._results["action"] = SpecialistResult(
+                task_name="action",
+                source_frame_id=frame_id,
+                capture_timestamp=capture_timestamp,
+                inference_timestamp=now,
+                confidence=prob,
+                data={"fight_prob": prob, "clip_id": self._run_counts["action"] + 1,
+                      "track_ids": [p.track_id for p in close], "mode": self.action.mode},
+                inference_time_ms=(now - t0) * 1000.0,
+            )
+
     def _run_weapon(self, frame: np.ndarray, frame_id: int, capture_timestamp: float):
         """Execute weapon model and update cache."""
         t0 = time.monotonic()
@@ -528,8 +582,11 @@ class SpecialistWorker:
                 "weapon": SpecialistResult("weapon", 0, now, now, 0.0, []),
                 "pose": SpecialistResult("pose", 0, now, now, 0.0, []),
                 "violence": SpecialistResult("violence", 0, now, now, 0.0, []),
+                "normal_scene": SpecialistResult("normal_scene", 0, now, now, 0.0, []),
             }
             self._fire_buffer = []
+            self._results["action"] = SpecialistResult("action", 0, now, now, 0.0, {})
+            self.history.clear()
             self._last_run_time = {k: 0.0 for k in self._last_run_time}
             self._run_counts = {k: 0 for k in self._run_counts}
             self._specialist_fps = {k: 0.0 for k in self._specialist_fps}

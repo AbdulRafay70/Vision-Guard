@@ -206,6 +206,8 @@ FIGHT_MIN_PERSONS = 2
 FIGHT_MIN_DURATION_SECONDS = 1.5     # Recurrence gate in FightDetector filters transient contact; 3.5s reported fights far too late
 
 # Violence Classifier (Day 2 — neural fight verification)
+FIGHT_ACTION_MODEL = str(MODELS_DIR / "fight_action_best.pt")  # Optional fine-tuned clip model (data_science/train_fight_action.py)
+FIGHT_ACTION_THRESHOLD = 0.45        # Clip-level fight probability that counts as a fight clip
 VIOLENCE_CONF_THRESHOLD = 0.70       # Min classifier confidence to confirm violence (raised to reduce false positives)
 VIOLENCE_MAX_CROPS_PER_FRAME = 3     # GPU budget: max person crops classified per frame
 
